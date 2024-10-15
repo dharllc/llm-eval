@@ -13,11 +13,44 @@ const theme = createTheme({
 
 function App() {
   const [evaluationStarted, setEvaluationStarted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSystemPromptSubmit = (prompt: string) => {
+  const handleSystemPromptSubmit = async (prompt: string) => {
     console.log('System prompt submitted:', prompt);
     setEvaluationStarted(true);
-    // TODO: Implement the logic to start the evaluation
+    setIsLoading(true);
+    setError(null);
+  
+    try {
+      console.log('Sending request to backend...');
+      const response = await fetch('http://localhost:8000/evaluate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',  // Add this line
+        body: JSON.stringify({ prompt }),
+      });
+  
+      console.log('Response status:', response.status);
+      console.log('Response headers:', response.headers);
+  
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Response not OK. Error:', errorText);
+        throw new Error(`Evaluation failed: ${errorText}`);
+      }
+  
+      const data = await response.json();
+      console.log('Evaluation completed:', data);
+      // TODO: Update UI to show evaluation results or completion status
+    } catch (error) {
+      console.error('Error during evaluation:', error);
+      setError(`An error occurred during evaluation: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const evaluationCriteria = [
@@ -43,7 +76,7 @@ function App() {
                 Language Model
               </Typography>
               <Typography variant="body1">
-                Current model: GPT-4 mini (default)
+                Current model: GPT-4o-mini (default)
               </Typography>
             </Paper>
             
@@ -75,6 +108,9 @@ function App() {
             </Paper>
           </Grid>
         </Grid>
+        
+        {isLoading && <Typography>Evaluation in progress...</Typography>}
+        {error && <Typography color="error">{error}</Typography>}
       </Container>
     </ThemeProvider>
   );
