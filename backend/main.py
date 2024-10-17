@@ -1,9 +1,3 @@
-# backend/main.py
-# Activate virtual environment before running:
-# source venv/bin/activate
-# Start the server:
-# uvicorn main:app --reload
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -20,10 +14,18 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+# Load repository configuration
+repo_config_path = os.path.join(os.path.dirname(__file__), "..", "config.json")
+with open(repo_config_path, "r") as config_file:
+    repo_config = json.load(config_file)
+
+# Log the loaded configuration
+logger.info(f"Loaded configuration: {repo_config}")
+
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=[f"http://localhost:{repo_config['frontend']['port']}"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -43,6 +45,10 @@ MODEL_NAME = config.get("model_name", "gpt-4")  # Default to gpt-4 if not specif
 
 class SystemPrompt(BaseModel):
     prompt: str
+
+@app.get("/config")
+async def get_config():
+    return {"backendPort": repo_config["backend"]["port"]}
 
 @app.post("/evaluate")
 async def evaluate(system_prompt: SystemPrompt):
@@ -68,7 +74,7 @@ async def evaluate(system_prompt: SystemPrompt):
                 response = client.chat.completions.create(
                     model=MODEL_NAME,
                     messages=messages,
-                    max_tokens=1500,  # Adjust based on your needs and token limits
+                    max_tokens=1500,
                     temperature=0.7,
                     top_p=1,
                     frequency_penalty=0,
@@ -120,7 +126,11 @@ async def evaluate(system_prompt: SystemPrompt):
 async def root():
     return {"message": "Hello World"}
 
+def get_port():
+    return repo_config["backend"]["port"]
+
 if __name__ == "__main__":
     import uvicorn
-    logger.info("Starting FastAPI server")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = get_port()
+    logger.info(f"Starting FastAPI server on port {port}")
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)

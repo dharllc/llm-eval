@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ThemeProvider, createTheme, CssBaseline, Container, Typography, Paper, Grid, Box } from '@mui/material';
 import SystemPromptInput from './components/SystemPromptInput';
 
@@ -15,8 +15,24 @@ function App() {
   const [evaluationStarted, setEvaluationStarted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [backendPort, setBackendPort] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch(`http://localhost:${process.env.REACT_APP_BACKEND_PORT}/config`)
+      .then(response => response.json())
+      .then(data => setBackendPort(data.backendPort))
+      .catch(error => {
+        console.error('Error loading configuration:', error);
+        setError('Failed to load configuration. Please check if the backend is running.');
+      });
+  }, []);
 
   const handleSystemPromptSubmit = async (prompt: string) => {
+    if (!backendPort) {
+      setError('Backend port not configured. Please check your setup.');
+      return;
+    }
+
     console.log('System prompt submitted:', prompt);
     setEvaluationStarted(true);
     setIsLoading(true);
@@ -24,12 +40,12 @@ function App() {
   
     try {
       console.log('Sending request to backend...');
-      const response = await fetch('http://localhost:8000/evaluate', {
+      const response = await fetch(`http://localhost:${backendPort}/evaluate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include',  // Add this line
+        credentials: 'include',
         body: JSON.stringify({ prompt }),
       });
   

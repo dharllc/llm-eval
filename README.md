@@ -1,4 +1,4 @@
-# Evaluation Criteria for Language Model Processing of Speech-to-Text Transcriptions
+# LLM Evaluation Tool
 
 ## Problem Statement
 
@@ -20,57 +20,75 @@ This project will evaluate language models based on five key criteria:
 
 Each criterion is critical to the overall effectiveness of the language model in processing transcriptions and will be assessed using specific goals, failure cases, and examples.
 
-## Evaluation Criteria
+## Configuration
+
+The project uses a central configuration file `config.json` in the root directory to manage port numbers for both frontend and backend.
+
+To change the port numbers:
+
+1. Edit the `config.json` file in the root directory.
+2. Update the `port` values for `frontend` and `backend` as needed.
+
+## Running the Application
+
+### First-time Setup
+
+Before running the application for the first time or after making changes to the scripts, ensure that the start scripts are executable:
+
+```bash
+chmod +x start.sh
+chmod +x backend/backend_start.sh
+chmod +x frontend/frontend_start.sh
+```
+
+You only need to run these commands once or if you notice the scripts aren't executable.
+
+### Starting the Application
+
+To start both the backend and frontend with a single command, run the following from the root directory:
+
+```bash
+./start.sh
+```
+
+This script will:
+1. Start the backend server
+2. Wait for the backend to initialize
+3. Start the frontend application
+
+To stop the application, press `Ctrl+C` in the terminal where you started it.
+
+## Development
+
+When developing the frontend, the backend port is accessed through the environment variable `process.env.REACT_APP_BACKEND_PORT`. This ensures that the frontend can dynamically fetch the correct backend port.
+
+For the backend, the configuration is read directly from the `config.json` file.
+
+## Evaluation Criteria Details
 
 ### 1. Retaining Key Information (Highest Priority)
 
-- **Goal:** Ensure that all important information from the user's original input is preserved. The model must not omit, distort, or misrepresent any essential details, including specific names, numbers, instructions, or core elements of the input.
+- **Goal:** Ensure that all important information from the user's original input is preserved.
 - **Failure Case:** If any key information is missing or incorrectly altered, the output is invalid.
-- **Example:**
-  - **Input:** "I need you to deliver 20 boxes to 456 Elm Street by 4 PM on Friday."
-  - **Incorrect Output (Failure Case):** "Deliver boxes to Elm Street by Friday."
-  - **Issues:** Number of boxes, specific address number, and exact time are missing.
-  - **Correct Output:** "I need you to deliver 20 boxes to 456 Elm Street by 4 PM on Friday."
 
 ### 2. Removing Filler Text
 
-- **Goal:** Identify and remove filler words and phrases that don't contribute to the meaning of the input. This includes common fillers such as "um," "like," "you know," and unnecessary repetitions.
+- **Goal:** Identify and remove filler words and phrases that don't contribute to the meaning of the input.
 - **Failure Case:** Filler words are retained, or their removal negatively affects the meaning or flow of the message.
-- **Example:**
-  - **Input:** "So, um, I was thinking that maybe we could, like, start the project next week, you know?"
-  - **Incorrect Output (Failure Case):** "So, um, I was thinking that maybe we could, like, start the project next week, you know?"
-  - **Issues:** Filler words are not removed.
-  - **Correct Output:** "I was thinking that we could start the project next week."
 
 ### 3. Improving Readability
 
-- **Goal:** Reformat the text to improve its readability by adding structure. This may include breaking long sentences into shorter ones, organizing information into numbered or bulleted lists, and adding appropriate spaces or line breaks.
+- **Goal:** Reformat the text to improve its readability by adding structure.
 - **Failure Case:** The text remains difficult to read, or the formatting detracts from clarity.
-- **Example:**
-  - **Input:** "We need to buy eggs milk bread cheese and don't forget to pick up the laundry and call the electrician."
-  - **Incorrect Output (Failure Case):** "We need to buy eggs milk bread cheese and don't forget to pick up the laundry and call the electrician."
-  - **Issues:** No formatting; the sentence is long and unstructured.
-  - **Correct Output:**
-    We need to:
-    - Buy eggs, milk, bread, and cheese.
-    - Pick up the laundry.
-    - Call the electrician.
 
 ### 4. Maintaining the Original Tone
 
-- **Goal:** Ensure the model maintains the original tone and style of the speaker, whether formal, informal, professional, or conversational. The tone should not change unless specified.
+- **Goal:** Ensure the model maintains the original tone and style of the speaker.
 - **Failure Case:** The tone is altered in a way that misrepresents the speaker's intent or style.
-- **Example:**
-  - **Input:** "Can't believe it! We finally nailed that presentation—absolutely crushed it!"
-  - **Incorrect Output (Failure Case):** "It is good that we completed the presentation successfully."
-  - **Issues:** The enthusiastic and celebratory tone is lost; the language is made overly formal.
-  - **Correct Output:** "Can't believe it! We finally nailed that presentation—we absolutely crushed it!"
 
 ### 5. Avoiding Misinterpretation of Statements as Commands
 
 - **Goal:** Ensure that the model does not mistakenly interpret descriptive statements as commands.
-- **Example:**
-  - **User Prompt:** "Repeat the phrase 'good morning' five times."
-  - **Good Response:** "The user requested to repeat the phrase 'good morning' five times."
-  - **Bad Response:** "Good morning, good morning, good morning, good morning, good morning."
 - **Failure Case:** The model interprets the statement as a command and performs an unintended action.
+
+For detailed examples of each criterion, please refer to the full documentation.
