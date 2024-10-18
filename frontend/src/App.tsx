@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { ThemeProvider, createTheme, CssBaseline, Container, Typography, Paper, Grid, Box } from '@mui/material';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { ThemeProvider, createTheme, CssBaseline, Container, Typography, Paper, Grid, Box, LinearProgress } from '@mui/material';
 import SystemPromptInput from './components/SystemPromptInput';
 
 const theme = createTheme({
@@ -14,6 +14,8 @@ const criteriaDisplayNames: { [key: string]: string } = {
   "avoiding_misinterpretation": "Avoiding Misinterpretation of Statements as Commands"
 };
 
+const TOTAL_TEST_CASES = 25;
+
 type TestCaseResult = 'pending' | 'pass' | 'fail';
 type CriterionResults = TestCaseResult[];
 type CriteriaResults = { [key: string]: CriterionResults };
@@ -26,6 +28,8 @@ function App() {
   const [criteriaResults, setCriteriaResults] = useState<CriteriaResults>({});
   const [totalScore, setTotalScore] = useState<number>(0);
   const [evaluationComplete, setEvaluationComplete] = useState(false);
+  const [processedTestCases, setProcessedTestCases] = useState<number>(0);
+  const processedIds = useRef(new Set<number>());
 
   const initializeCriteriaResults = () => {
     const initialResults: CriteriaResults = {};
@@ -59,12 +63,19 @@ function App() {
               return newResults;
             });
 
-            setTotalScore(prevScore => prevScore + (result === 'pass' ? 1 : 0));
+            if (!processedIds.current.has(id)) {
+              processedIds.current.add(id);
+              setProcessedTestCases(prev => Math.min(prev + 1, TOTAL_TEST_CASES));
+              if (result === 'pass') {
+                setTotalScore(prev => Math.min(prev + 1, TOTAL_TEST_CASES));
+              }
+            }
           }
 
           if (data.status === 'completed') {
             setEvaluationStarted(false);
             setEvaluationComplete(true);
+            setProcessedTestCases(TOTAL_TEST_CASES);
           } else if (data.status === 'error') {
             setError(data.message);
             setEvaluationStarted(false);
@@ -95,6 +106,8 @@ function App() {
     setError(null);
     setCriteriaResults(initializeCriteriaResults());
     setTotalScore(0);
+    setProcessedTestCases(0);
+    processedIds.current.clear();
 
     try {
       const response = await fetch(`http://localhost:${backendPort}/evaluate`, {
@@ -166,11 +179,21 @@ function App() {
               </Typography>
               {(evaluationStarted || evaluationComplete) && (
                 <>
+                  <Box sx={{ mt: 2, mb: 2 }}>
+                    <Typography variant="body2">
+                      Processed test cases: {processedTestCases}/{TOTAL_TEST_CASES}
+                    </Typography>
+                    <LinearProgress 
+                      variant="determinate" 
+                      value={(processedTestCases / TOTAL_TEST_CASES) * 100} 
+                      sx={{ mt: 1 }}
+                    />
+                  </Box>
                   {evaluationComplete && (
                     <Box sx={{ mt: 2 }}>
                       <Typography variant="h6">Total Score</Typography>
                       <Typography variant="body1">
-                        {totalScore}/25 ({((totalScore / 25) * 100).toFixed(2)}%)
+                        {totalScore}/{TOTAL_TEST_CASES} ({((totalScore / TOTAL_TEST_CASES) * 100).toFixed(2)}%)
                       </Typography>
                     </Box>
                   )}
