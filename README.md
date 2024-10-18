@@ -1,38 +1,38 @@
 # LLM Evaluation Tool
 
 ## Problem Statement
-
 Language models often struggle with accurately processing raw transcribed text from speech-to-text inputs. Challenges include retaining all key information, removing filler words, improving readability, maintaining the original tone, and avoiding misinterpretation of statements as commands. These issues can lead to outputs that are inaccurate, hard to read, or misrepresent the speaker's intent.
 
 ## Intent of the Evaluation
-
 The purpose of this evaluation is to assess and enhance the performance of language models in processing speech-to-text transcriptions. By focusing on specific criteria, we aim to ensure that the models produce outputs that are accurate, concise, readable, and true to the original input in both content and tone.
 
 ## Scope of the Project
-
-This project will evaluate language models based on five key criteria:
-
+This project evaluates language models based on five key criteria:
 1. Retaining Key Information (Highest Priority)
 2. Removing Filler Text
 3. Improving Readability
 4. Maintaining the Original Tone
 5. Avoiding Misinterpretation of Statements as Commands
 
-Each criterion is critical to the overall effectiveness of the language model in processing transcriptions and will be assessed using specific goals, failure cases, and examples.
+Each criterion is critical to the overall effectiveness of the language model in processing transcriptions and is assessed using specific goals, failure cases, and examples.
+
+## New Features
+- Real-time progress tracking for individual evaluation criteria and overall progress
+- WebSocket integration for live updates between frontend and backend
+- Visual representation of test case results with color-coded bars (green for pass, red for fail)
+- Dynamic UI that displays progress from 0/5 to 5/5 for each criterion and 0/25 to 25/25 for total progress
+- Final score calculation and display upon completion of evaluation
 
 ## Configuration
-
 The project uses a central configuration file `config.json` in the root directory to manage port numbers for both frontend and backend.
 
 To change the port numbers:
-
 1. Edit the `config.json` file in the root directory.
 2. Update the `port` values for `frontend` and `backend` as needed.
 
 ## Running the Application
 
 ### First-time Setup
-
 Before running the application for the first time or after making changes to the scripts, ensure that the start scripts are executable:
 
 ```bash
@@ -44,7 +44,6 @@ chmod +x frontend/frontend_start.sh
 You only need to run these commands once or if you notice the scripts aren't executable.
 
 ### Starting the Application
-
 To start both the backend and frontend with a single command, run the following from the root directory:
 
 ```bash
@@ -59,7 +58,6 @@ This script will:
 To stop the application, press `Ctrl+C` in the terminal where you started it.
 
 ## Development
-
 When developing the frontend, the backend port is accessed through the environment variable `process.env.REACT_APP_BACKEND_PORT`. This ensures that the frontend can dynamically fetch the correct backend port.
 
 For the backend, the configuration is read directly from the `config.json` file.
@@ -67,28 +65,33 @@ For the backend, the configuration is read directly from the `config.json` file.
 ## Evaluation Criteria Details
 
 ### 1. Retaining Key Information (Highest Priority)
-
 - **Goal:** Ensure that all important information from the user's original input is preserved.
 - **Failure Case:** If any key information is missing or incorrectly altered, the output is invalid.
 
 ### 2. Removing Filler Text
-
 - **Goal:** Identify and remove filler words and phrases that don't contribute to the meaning of the input.
 - **Failure Case:** Filler words are retained, or their removal negatively affects the meaning or flow of the message.
 
 ### 3. Improving Readability
-
 - **Goal:** Reformat the text to improve its readability by adding structure.
 - **Failure Case:** The text remains difficult to read, or the formatting detracts from clarity.
 
 ### 4. Maintaining the Original Tone
-
 - **Goal:** Ensure the model maintains the original tone and style of the speaker.
 - **Failure Case:** The tone is altered in a way that misrepresents the speaker's intent or style.
 
 ### 5. Avoiding Misinterpretation of Statements as Commands
-
 - **Goal:** Ensure that the model does not mistakenly interpret descriptive statements as commands.
 - **Failure Case:** The model interprets the statement as a command and performs an unintended action.
 
 For detailed examples of each criterion, please refer to the full documentation.
+
+## Evaluation Results
+
+### Evaluation 1
+![Evaluation 1](images/eval1.png)
+
+### Evaluation 2
+![Evaluation 2](images/eval2.png)
+
+These images show the results of two separate evaluations performed using our LLM Evaluation Tool. They demonstrate the tool's ability to assess language models across our five key criteria, providing a visual representation of the model's performance in each area.
