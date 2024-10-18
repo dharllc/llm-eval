@@ -100,7 +100,7 @@ async def evaluate_output(input_text: str, output_text: str, criterion: str, des
                 {"role": "system", "content": "You are an expert evaluator of language model outputs. Your task is to fairly and accurately assess the quality of responses based on given criteria."},
                 {"role": "user", "content": evaluation_prompt}
             ],
-            max_tokens=100,
+            max_tokens=1000,
             temperature=0.3
         )
         evaluation = response.choices[0].message.content.strip()
@@ -143,7 +143,7 @@ async def evaluate(system_prompt: SystemPrompt):
                     model=EVALUATION_MODEL,
                     messages=messages,
                     max_tokens=1500,
-                    temperature=0.7,
+                    temperature=0.0,
                     top_p=1,
                     frequency_penalty=0,
                     presence_penalty=0
