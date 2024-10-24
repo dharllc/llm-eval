@@ -3,7 +3,10 @@ import { ThemeProvider, createTheme, CssBaseline, Container, Typography, Paper, 
 import SystemPromptInput from './components/SystemPromptInput';
 
 const theme = createTheme({
-  palette: { mode: 'light', primary: { main: '#1976d2' } },
+  palette: { 
+    mode: 'light', 
+    primary: { main: '#3b82f6' }
+  },
 });
 
 const criteriaDisplayNames: { [key: string]: string } = {
@@ -139,8 +142,9 @@ function App() {
             style={{
               flex: 1,
               height: '20px',
-              backgroundColor: result === 'pass' ? '#90EE90' : result === 'fail' ? '#ffcccb' : '#e0e0e0',
-              margin: '0 1px'
+              backgroundColor: result === 'pass' ? '#22c55e' : result === 'fail' ? '#ef4444' : '#e5e7eb',
+              margin: '0 1px',
+              borderRadius: '2px'
             }}
           />
         ))}
