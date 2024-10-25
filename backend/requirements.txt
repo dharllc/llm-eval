@@ -3,3 +3,7 @@ uvicorn
 python-dotenv
 openai
 pydantic
+sqlalchemy==2.0.25
+alembic==1.13.1
+aiosqlite==0.19.0
+sqlalchemy[asyncio]
