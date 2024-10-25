@@ -236,15 +236,6 @@ async def evaluate(system_prompt: SystemPrompt):
         with open(output_file, "w") as f:
             json.dump(output_data, f, indent=2)
 
-        scoring_file = os.path.join(os.path.dirname(__file__), f"../data/scoring_results_{timestamp}.json")
-        scoring_data = {
-            "timestamp": timestamp,
-            "model_name": SCORING_MODEL,
-            "scoring_results": scoring_results
-        }
-        with open(scoring_file, "w") as f:
-            json.dump(scoring_data, f, indent=2)
-
         final_progress = {
             "total_progress": f"{total_cases}/{total_cases}",
             "criteria_progress": criteria_counts,
@@ -253,8 +244,8 @@ async def evaluate(system_prompt: SystemPrompt):
         }
         await manager.broadcast(json.dumps(final_progress))
 
-        logger.info(f"Evaluation and scoring completed. Results saved to {output_file} and {scoring_file}")
-        return {"message": "Evaluation and scoring completed", "output_file": output_file, "scoring_file": scoring_file}
+        logger.info(f"Evaluation and scoring completed. Results saved to {output_file}")
+        return {"message": "Evaluation and scoring completed", "output_file": output_file}
 
     except Exception as e:
         logger.error(f"Error during evaluation: {str(e)}", exc_info=True)
