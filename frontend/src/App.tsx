@@ -6,19 +6,14 @@ const theme = createTheme({
   palette: { mode: 'light', primary: { main: '#1976d2' } },
 });
 
-const criteriaDisplayNames: { [key: string]: string } = {
-  "retaining_key_information": "Retaining Key Information",
-  "removing_filler_text": "Removing Filler Text",
-  "improving_readability": "Improving Readability",
-  "maintaining_original_tone": "Maintaining the Original Tone",
-  "avoiding_misinterpretation": "Avoiding Misinterpretation of Statements as Commands"
-};
-
-const TOTAL_TEST_CASES = 25;
-
 type TestCaseResult = 'pending' | 'pass' | 'fail';
-type CriterionResults = TestCaseResult[];
-type CriteriaResults = { [key: string]: CriterionResults };
+type TestResultMap = { [id: number]: TestCaseResult };
+type CriteriaResults = { [criterion: string]: TestResultMap };
+type TestCaseAnalysis = {
+  criteria: { [key: string]: string };
+  counts_per_criterion: { [key: string]: number };
+  total_test_cases: number;
+};
 
 function App() {
   const [evaluationStarted, setEvaluationStarted] = useState(false);
@@ -30,20 +25,24 @@ function App() {
   const [evaluationComplete, setEvaluationComplete] = useState(false);
   const [processedTestCases, setProcessedTestCases] = useState<number>(0);
   const processedIds = useRef(new Set<number>());
-
-  const initializeCriteriaResults = () => {
-    const initialResults: CriteriaResults = {};
-    Object.keys(criteriaDisplayNames).forEach(criterion => {
-      initialResults[criterion] = Array(5).fill('pending');
-    });
-    return initialResults;
-  };
+  const [testCaseAnalysis, setTestCaseAnalysis] = useState<TestCaseAnalysis | null>(null);
 
   useEffect(() => {
+    const fetchAnalysis = async (port: number) => {
+      try {
+        const response = await fetch(`http://localhost:${port}/test-case-analysis`);
+        const analysis = await response.json();
+        setTestCaseAnalysis(analysis);
+      } catch (error) {
+        console.error('Error fetching test case analysis:', error);
+      }
+    };
+
     fetch(`http://localhost:${process.env.REACT_APP_BACKEND_PORT}/config`)
       .then(response => response.json())
       .then(data => {
         setBackendPort(data.backendPort);
+        fetchAnalysis(data.backendPort);
         const socket = new WebSocket(`ws://localhost:${data.backendPort}/ws`);
         setWs(socket);
 
@@ -56,26 +55,24 @@ function App() {
             setCriteriaResults(prevResults => {
               const newResults = { ...prevResults };
               if (!newResults[criterion]) {
-                newResults[criterion] = Array(5).fill('pending');
+                newResults[criterion] = {};
               }
-              const index = (id - 1) % 5;
-              newResults[criterion][index] = result as TestCaseResult;
+              newResults[criterion][id] = result as TestCaseResult;
               return newResults;
             });
 
             if (!processedIds.current.has(id)) {
               processedIds.current.add(id);
-              setProcessedTestCases(prev => Math.min(prev + 1, TOTAL_TEST_CASES));
+              setProcessedTestCases(prev => prev + 1);
               if (result === 'pass') {
-                setTotalScore(prev => Math.min(prev + 1, TOTAL_TEST_CASES));
+                setTotalScore(prev => prev + 1);
               }
             }
           }
 
-          if (data.status === 'completed') {
+          if (data.stage === 'completed') {
             setEvaluationStarted(false);
             setEvaluationComplete(true);
-            setProcessedTestCases(TOTAL_TEST_CASES);
           } else if (data.status === 'error') {
             setError(data.message);
             setEvaluationStarted(false);
@@ -104,7 +101,7 @@ function App() {
     setEvaluationStarted(true);
     setEvaluationComplete(false);
     setError(null);
-    setCriteriaResults(initializeCriteriaResults());
+    setCriteriaResults({});
     setTotalScore(0);
     setProcessedTestCases(0);
     processedIds.current.clear();
@@ -130,10 +127,24 @@ function App() {
   }, [backendPort]);
 
   const renderProgressBar = (criterion: string) => {
-    const results = criteriaResults[criterion] || Array(5).fill('pending');
+    const count = testCaseAnalysis?.counts_per_criterion[criterion] || 0;
+    const results = criteriaResults[criterion] || {};
+    
+    // Find all IDs for this criterion and sort them
+    const criterionIds = Object.keys(results)
+      .map(Number)
+      .filter(id => results[id] !== undefined)
+      .sort((a, b) => a - b);
+  
+    // Create array of length count, mapping results to their correct positions
+    const resultArray = Array.from({ length: count }, (_, index) => {
+      const id = criterionIds[index];
+      return id ? results[id] : 'pending';
+    });
+  
     return (
       <div style={{ display: 'flex', marginTop: '5px', marginBottom: '5px' }}>
-        {results.map((result, index) => (
+        {resultArray.map((result, index) => (
           <div
             key={index}
             style={{
@@ -147,6 +158,13 @@ function App() {
       </div>
     );
   };
+
+  const getPassCountForCriterion = (criterion: string) => {
+    const results = criteriaResults[criterion] || {};
+    return Object.values(results).filter(result => result === 'pass').length;
+  };
+
+  const totalTestCases = testCaseAnalysis?.total_test_cases || 0;
 
   return (
     <ThemeProvider theme={theme}>
@@ -177,15 +195,15 @@ function App() {
               <Typography variant="h6" gutterBottom>
                 Evaluation Progress
               </Typography>
-              {(evaluationStarted || evaluationComplete) && (
+              {(evaluationStarted || evaluationComplete) && testCaseAnalysis && (
                 <>
                   <Box sx={{ mt: 2, mb: 2 }}>
                     <Typography variant="body2">
-                      Processed test cases: {processedTestCases}/{TOTAL_TEST_CASES}
+                      Processed test cases: {processedTestCases}/{totalTestCases}
                     </Typography>
                     <LinearProgress 
                       variant="determinate" 
-                      value={(processedTestCases / TOTAL_TEST_CASES) * 100} 
+                      value={(processedTestCases / totalTestCases) * 100} 
                       sx={{ mt: 1 }}
                     />
                   </Box>
@@ -193,21 +211,21 @@ function App() {
                     <Box sx={{ mt: 2 }}>
                       <Typography variant="h6">Total Score</Typography>
                       <Typography variant="body1">
-                        {totalScore}/{TOTAL_TEST_CASES} ({((totalScore / TOTAL_TEST_CASES) * 100).toFixed(2)}%)
+                        {totalScore}/{totalTestCases} ({((totalScore / totalTestCases) * 100).toFixed(2)}%)
                       </Typography>
                     </Box>
                   )}
                   <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>
                     Evaluation Criteria
                   </Typography>
-                  {Object.entries(criteriaDisplayNames).map(([criterion, displayName], index) => (
-                    <Box key={index} sx={{ mb: 2 }}>
+                  {Object.entries(testCaseAnalysis.criteria).map(([criterion, displayName], index) => (
+                    <Box key={criterion} sx={{ mb: 2 }}>
                       <Typography variant="body1">
                         {index + 1}. {displayName}
                       </Typography>
                       {renderProgressBar(criterion)}
                       <Typography variant="body2" color="text.secondary">
-                        Pass: {criteriaResults[criterion]?.filter(r => r === 'pass').length || 0}/5
+                        Pass: {getPassCountForCriterion(criterion)}/{testCaseAnalysis.counts_per_criterion[criterion]}
                       </Typography>
                     </Box>
                   ))}

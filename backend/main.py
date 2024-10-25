@@ -41,6 +41,28 @@ SCORING_MODEL = config.get("scoring_model", "gpt-4o-mini")
 
 logger.info(f"Loaded model configuration: Evaluation model: {EVALUATION_MODEL}, Scoring model: {SCORING_MODEL}")
 
+def snake_to_title_case(text: str) -> str:
+    return ' '.join(word.capitalize() for word in text.split('_'))
+
+def analyze_test_cases() -> dict:
+    test_cases_path = os.path.join(os.path.dirname(__file__), "evaluation_test_cases.json")
+    with open(test_cases_path, "r") as f:
+        data = json.load(f)
+        test_cases = data["test_cases"]
+    
+    criteria_counts = {}
+    for case in test_cases:
+        criterion = case['criterion']
+        if criterion not in criteria_counts:
+            criteria_counts[criterion] = 0
+        criteria_counts[criterion] += 1
+    
+    return {
+        "criteria": {k: snake_to_title_case(k) for k in criteria_counts.keys()},
+        "counts_per_criterion": criteria_counts,
+        "total_test_cases": len(test_cases)
+    }
+
 class SystemPrompt(BaseModel):
     prompt: str
 
@@ -80,6 +102,10 @@ async def websocket_endpoint(websocket: WebSocket):
 async def get_config():
     return {"backendPort": repo_config["backend"]["port"]}
 
+@app.get("/test-case-analysis")
+async def get_test_case_analysis():
+    return analyze_test_cases()
+
 async def evaluate_output(input_text: str, output_text: str, criterion: str, description: str):
     evaluation_prompt = f"""
     Evaluate the following language model output based on the given input, criterion, and description.
@@ -115,24 +141,23 @@ async def evaluate_output(input_text: str, output_text: str, criterion: str, des
 async def evaluate(system_prompt: SystemPrompt):
     logger.info(f"Received evaluation request with prompt: {system_prompt.prompt}")
     try:
-        test_cases_path = os.path.join(os.path.dirname(__file__), "../data/evaluation_test_cases.json")
+        test_cases_path = os.path.join(os.path.dirname(__file__), "evaluation_test_cases.json")
         with open(test_cases_path, "r") as f:
             test_cases = json.load(f)["test_cases"]
-        logger.info(f"Loaded {len(test_cases)} test cases")
+        
+        analysis = analyze_test_cases()
+        logger.info(f"Loaded {analysis['total_test_cases']} test cases")
 
         results = []
-        total_cases = len(test_cases)
-        criteria_counts = {}
+        total_cases = analysis["total_test_cases"]
+        criteria_counts = {criterion: {'total': count, 'processed': 0} 
+                         for criterion, count in analysis["counts_per_criterion"].items()}
         scoring_results = []
 
         for index, case in enumerate(test_cases, start=1):
             logger.info(f"Processing case {case['id']}")
 
             criterion = case['criterion']
-            if criterion not in criteria_counts:
-                criteria_counts[criterion] = {'total': 0, 'processed': 0}
-            criteria_counts[criterion]['total'] += 1
-
             messages = [
                 {"role": "system", "content": system_prompt.prompt},
                 {"role": "user", "content": case['input']}
@@ -151,7 +176,6 @@ async def evaluate(system_prompt: SystemPrompt):
 
                 assistant_response = response.choices[0].message.content.strip()
 
-                # Immediately evaluate the output
                 evaluation = await evaluate_output(case['input'], assistant_response, case['criterion'], case['description'])
 
                 result = {
