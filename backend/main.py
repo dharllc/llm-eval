@@ -115,7 +115,7 @@ async def evaluate_output(input_text: str, output_text: str, criterion: str, des
 async def evaluate(system_prompt: SystemPrompt):
     logger.info(f"Received evaluation request with prompt: {system_prompt.prompt}")
     try:
-        test_cases_path = os.path.join(os.path.dirname(__file__), "../data/evaluation_test_cases.json")
+        test_cases_path = os.path.join(os.path.dirname(__file__), "evaluation_test_cases.json")
         with open(test_cases_path, "r") as f:
             test_cases = json.load(f)["test_cases"]
         logger.info(f"Loaded {len(test_cases)} test cases")
@@ -151,7 +151,6 @@ async def evaluate(system_prompt: SystemPrompt):
 
                 assistant_response = response.choices[0].message.content.strip()
 
-                # Immediately evaluate the output
                 evaluation = await evaluate_output(case['input'], assistant_response, case['criterion'], case['description'])
 
                 result = {
