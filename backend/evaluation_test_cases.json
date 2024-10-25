@@ -33,7 +33,7 @@
       {
         "id": 6,
         "input": "So, um, I was thinking, you know, maybe we could, like, go to the movies or something, if you want to, I mean.",
-        "criterion": "retaining_key_information",
+        "criterion": "removing_filler_text",
         "description": "Remove filler words while maintaining the core message"
       },
       {
