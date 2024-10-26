@@ -1,7 +1,10 @@
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 import os
 import json
 from datetime import datetime
@@ -9,6 +12,17 @@ from openai import OpenAI
 import logging
 import asyncio
 from typing import List, Dict, Any
+
+from database import (
+    get_async_session, 
+    EvaluationType, 
+    Criterion, 
+    TestCase, 
+    Evaluation, 
+    EvaluationResult,
+    verify_database,
+    snake_to_title_case
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,7 +44,6 @@ app.add_middleware(
 )
 
 load_dotenv()
-
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 config_path = os.path.join(os.path.dirname(__file__), "config.json")
@@ -41,27 +54,9 @@ SCORING_MODEL = config.get("scoring_model", "gpt-4o-mini")
 
 logger.info(f"Loaded model configuration: Evaluation model: {EVALUATION_MODEL}, Scoring model: {SCORING_MODEL}")
 
-def snake_to_title_case(text: str) -> str:
-    return ' '.join(word.capitalize() for word in text.split('_'))
-
-def analyze_test_cases() -> dict:
-    test_cases_path = os.path.join(os.path.dirname(__file__), "evaluation_test_cases.json")
-    with open(test_cases_path, "r") as f:
-        data = json.load(f)
-        test_cases = data["test_cases"]
-    
-    criteria_counts = {}
-    for case in test_cases:
-        criterion = case['criterion']
-        if criterion not in criteria_counts:
-            criteria_counts[criterion] = 0
-        criteria_counts[criterion] += 1
-    
-    return {
-        "criteria": {k: snake_to_title_case(k) for k in criteria_counts.keys()},
-        "counts_per_criterion": criteria_counts,
-        "total_test_cases": len(test_cases)
-    }
+@app.on_event("startup")
+async def startup_event():
+    await verify_database()
 
 class SystemPrompt(BaseModel):
     prompt: str
@@ -86,6 +81,33 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+async def analyze_test_cases(session: AsyncSession) -> dict:
+    # Use join to eagerly load relationships
+    stmt = (
+        select(TestCase)
+        .options(selectinload(TestCase.criterion))
+        .join(Criterion)
+        .join(EvaluationType)
+        .where(EvaluationType.name == "speech_to_text")
+    )
+    
+    result = await session.execute(stmt)
+    test_cases = result.scalars().all()
+    
+    criteria_counts = {}
+    for case in test_cases:
+        await session.refresh(case, ['criterion'])  # Ensure criterion is loaded
+        criterion_name = case.criterion.name
+        if criterion_name not in criteria_counts:
+            criteria_counts[criterion_name] = 0
+        criteria_counts[criterion_name] += 1
+    
+    return {
+        "criteria": {k: snake_to_title_case(k) for k in criteria_counts.keys()},
+        "counts_per_criterion": criteria_counts,
+        "total_test_cases": len(test_cases)
+    }
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
@@ -103,8 +125,8 @@ async def get_config():
     return {"backendPort": repo_config["backend"]["port"]}
 
 @app.get("/test-case-analysis")
-async def get_test_case_analysis():
-    return analyze_test_cases()
+async def get_test_case_analysis(session: AsyncSession = Depends(get_async_session)):
+    return await analyze_test_cases(session)
 
 async def evaluate_output(input_text: str, output_text: str, criterion: str, description: str):
     evaluation_prompt = f"""
@@ -141,111 +163,136 @@ async def evaluate_output(input_text: str, output_text: str, criterion: str, des
 async def evaluate(system_prompt: SystemPrompt):
     logger.info(f"Received evaluation request with prompt: {system_prompt.prompt}")
     try:
-        test_cases_path = os.path.join(os.path.dirname(__file__), "evaluation_test_cases.json")
-        with open(test_cases_path, "r") as f:
-            test_cases = json.load(f)["test_cases"]
-        
-        analysis = analyze_test_cases()
-        logger.info(f"Loaded {analysis['total_test_cases']} test cases")
+        async with get_async_session() as session:
+            # Get evaluation type and test cases
+            eval_type = await session.execute(
+                select(EvaluationType).where(EvaluationType.name == "speech_to_text")
+            )
+            eval_type = eval_type.scalar_one()
+            
+            test_cases = await session.execute(
+                select(TestCase)
+                .join(Criterion)
+                .where(Criterion.evaluation_type_id == eval_type.id)
+                .order_by(TestCase.id)
+            )
+            test_cases = test_cases.scalars().all()
+            
+            analysis = await analyze_test_cases(session)
+            logger.info(f"Loaded {analysis['total_test_cases']} test cases")
 
-        results = []
-        total_cases = analysis["total_test_cases"]
-        criteria_counts = {criterion: {'total': count, 'processed': 0} 
-                         for criterion, count in analysis["counts_per_criterion"].items()}
-        scoring_results = []
+            # Create evaluation record
+            evaluation = Evaluation(
+                evaluation_type_id=eval_type.id,
+                system_prompt=system_prompt.prompt,
+                model_name=EVALUATION_MODEL
+            )
+            session.add(evaluation)
+            await session.flush()
 
-        for index, case in enumerate(test_cases, start=1):
-            logger.info(f"Processing case {case['id']}")
+            results = []
+            total_cases = analysis["total_test_cases"]
+            criteria_counts = {criterion: {'total': count, 'processed': 0} 
+                             for criterion, count in analysis["counts_per_criterion"].items()}
+            scoring_results = []
 
-            criterion = case['criterion']
-            messages = [
-                {"role": "system", "content": system_prompt.prompt},
-                {"role": "user", "content": case['input']}
-            ]
+            for index, case in enumerate(test_cases, start=1):
+                logger.info(f"Processing case {case.id}")
 
-            try:
-                response = client.chat.completions.create(
-                    model=EVALUATION_MODEL,
-                    messages=messages,
-                    max_tokens=1500,
-                    temperature=0.0,
-                    top_p=1,
-                    frequency_penalty=0,
-                    presence_penalty=0
-                )
+                criterion = case.criterion.name
+                messages = [
+                    {"role": "system", "content": system_prompt.prompt},
+                    {"role": "user", "content": case.input}
+                ]
 
-                assistant_response = response.choices[0].message.content.strip()
+                try:
+                    response = await asyncio.to_thread(
+                        client.chat.completions.create,
+                        model=EVALUATION_MODEL,
+                        messages=messages,
+                        max_tokens=1500,
+                        temperature=0.0,
+                        top_p=1,
+                        frequency_penalty=0,
+                        presence_penalty=0
+                    )
 
-                evaluation = await evaluate_output(case['input'], assistant_response, case['criterion'], case['description'])
+                    assistant_response = response.choices[0].message.content.strip()
+                    evaluation_result = await evaluate_output(
+                        case.input, 
+                        assistant_response, 
+                        criterion,
+                        case.description
+                    )
 
-                result = {
-                    "id": case["id"],
-                    "input": case["input"],
-                    "criterion": case["criterion"],
-                    "description": case["description"],
-                    "output": assistant_response,
-                    "evaluation": evaluation
-                }
-                results.append(result)
-                scoring_results.append({
-                    "id": case["id"],
-                    "criterion": case["criterion"],
-                    "evaluation": evaluation
-                })
+                    # Create evaluation result record
+                    result = EvaluationResult(
+                        evaluation_id=evaluation.id,
+                        test_case_id=case.id,
+                        output=assistant_response,
+                        result=evaluation_result["result"],
+                        explanation=evaluation_result["explanation"]
+                    )
+                    session.add(result)
+                    await session.flush()
 
-                criteria_counts[criterion]['processed'] += 1
-                progress = {
-                    "total_progress": f"{index}/{total_cases}",
-                    "criteria_progress": criteria_counts,
-                    "stage": "evaluation",
-                    "current_result": {
-                        "id": case["id"],
-                        "criterion": case["criterion"],
-                        "result": evaluation["result"]
+                    result_dict = {
+                        "id": case.id,
+                        "input": case.input,
+                        "criterion": criterion,
+                        "description": case.description,
+                        "output": assistant_response,
+                        "evaluation": evaluation_result
                     }
-                }
-                await manager.broadcast(json.dumps(progress))
+                    results.append(result_dict)
+                    scoring_results.append({
+                        "id": case.id,
+                        "criterion": criterion,
+                        "evaluation": evaluation_result
+                    })
 
-            except Exception as e:
-                logger.error(f"OpenAI API error for case {case['id']}: {str(e)}")
-                result = {
-                    "id": case["id"],
-                    "input": case["input"],
-                    "criterion": case["criterion"],
-                    "description": case["description"],
-                    "output": f"Error: {str(e)}",
-                    "evaluation": {"result": "error", "explanation": str(e)}
-                }
-                results.append(result)
-                scoring_results.append({
-                    "id": case["id"],
-                    "criterion": case["criterion"],
-                    "evaluation": {"result": "error", "explanation": str(e)}
-                })
+                    criteria_counts[criterion]['processed'] += 1
+                    progress = {
+                        "total_progress": f"{index}/{total_cases}",
+                        "criteria_progress": criteria_counts,
+                        "stage": "evaluation",
+                        "current_result": {
+                            "id": case.id,
+                            "criterion": criterion,
+                            "result": evaluation_result["result"]
+                        }
+                    }
+                    await manager.broadcast(json.dumps(progress))
 
-            await asyncio.sleep(1)
+                except Exception as e:
+                    logger.error(f"OpenAI API error for case {case.id}: {str(e)}")
+                    result_dict = {
+                        "id": case.id,
+                        "input": case.input,
+                        "criterion": criterion,
+                        "description": case.description,
+                        "output": f"Error: {str(e)}",
+                        "evaluation": {"result": "error", "explanation": str(e)}
+                    }
+                    results.append(result_dict)
+                    scoring_results.append({
+                        "id": case.id,
+                        "criterion": criterion,
+                        "evaluation": {"result": "error", "explanation": str(e)}
+                    })
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = os.path.join(os.path.dirname(__file__), f"../data/eval_results_{timestamp}.json")
-        output_data = {
-            "timestamp": timestamp,
-            "system_prompt": system_prompt.prompt,
-            "model_name": EVALUATION_MODEL,
-            "results": results
-        }
-        with open(output_file, "w") as f:
-            json.dump(output_data, f, indent=2)
+                await asyncio.sleep(1)
 
-        final_progress = {
-            "total_progress": f"{total_cases}/{total_cases}",
-            "criteria_progress": criteria_counts,
-            "stage": "completed",
-            "scoring_results": scoring_results
-        }
-        await manager.broadcast(json.dumps(final_progress))
-
-        logger.info(f"Evaluation and scoring completed. Results saved to {output_file}")
-        return {"message": "Evaluation and scoring completed", "output_file": output_file}
+            final_progress = {
+                "total_progress": f"{total_cases}/{total_cases}",
+                "criteria_progress": criteria_counts,
+                "stage": "completed",
+                "scoring_results": scoring_results
+            }
+            await manager.broadcast(json.dumps(final_progress))
+            
+            logger.info("Evaluation and scoring completed")
+            return {"message": "Evaluation and scoring completed", "evaluation_id": evaluation.id}
 
     except Exception as e:
         logger.error(f"Error during evaluation: {str(e)}", exc_info=True)
