@@ -25,3 +25,9 @@ export interface WebSocketMessage {
   status?: string;
   message?: string;
 }
+
+export interface EvaluationSettings {
+  temperature: number;
+  system_prompt: string;
+  evaluation_prompt_template: string;
+}
