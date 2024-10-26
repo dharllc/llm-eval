@@ -1,21 +1,31 @@
 import React, { useState } from 'react';
-import { TextField, Button, Box, Typography } from '@mui/material';
+import { TextField, Button, Box, Typography, CircularProgress } from '@mui/material';
 
 interface SystemPromptInputProps {
   onSubmit: (prompt: string) => void;
+  disabled: boolean;
 }
 
-const SystemPromptInput: React.FC<SystemPromptInputProps> = ({ onSubmit }) => {
+export const SystemPromptInput: React.FC<SystemPromptInputProps> = ({ onSubmit, disabled }) => {
   const [prompt, setPrompt] = useState('');
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (prompt.trim() === '') {
       setError('System prompt cannot be empty');
-    } else {
-      setError('');
-      onSubmit(prompt);
+      return;
+    }
+    
+    setError('');
+    setIsSubmitting(true);
+    try {
+      await onSubmit(prompt);
+    } catch (err) {
+      setError('Failed to submit prompt. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -29,22 +39,41 @@ const SystemPromptInput: React.FC<SystemPromptInputProps> = ({ onSubmit }) => {
         multiline
         rows={4}
         value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
+        onChange={(e) => {
+          setPrompt(e.target.value);
+          setError('');
+        }}
         error={!!error}
         helperText={error}
         placeholder="Enter your system prompt here..."
         sx={{ mb: 2 }}
+        disabled={disabled || isSubmitting}
       />
       <Button
         type="submit"
         variant="contained"
         color="primary"
-        disabled={prompt.trim() === ''}
+        disabled={disabled || prompt.trim() === '' || isSubmitting}
+        sx={{ position: 'relative' }}
       >
-        Start Evaluation
+        {isSubmitting ? (
+          <>
+            Submitting
+            <CircularProgress
+              size={24}
+              sx={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                marginTop: '-12px',
+                marginLeft: '-12px',
+              }}
+            />
+          </>
+        ) : (
+          'Start Evaluation'
+        )}
       </Button>
     </Box>
   );
 };
-
-export default SystemPromptInput;
