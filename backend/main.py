@@ -1,9 +1,8 @@
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 import os
 import json
@@ -11,7 +10,8 @@ from datetime import datetime
 from openai import OpenAI
 import logging
 import asyncio
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Set
+import weakref
 
 from database import (
     get_async_session, 
@@ -21,7 +21,8 @@ from database import (
     Evaluation, 
     EvaluationResult,
     verify_database,
-    snake_to_title_case
+    snake_to_title_case,
+    DatabaseConnectionError
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -33,11 +34,15 @@ repo_config_path = os.path.join(os.path.dirname(__file__), "..", "config.json")
 with open(repo_config_path, "r") as config_file:
     repo_config = json.load(config_file)
 
-logger.info(f"Loaded repository configuration: {repo_config}")
+origins = [
+    f"http://localhost:{repo_config['frontend']['port']}",
+    "http://localhost:3004",  # Hardcoded fallback
+    "*"  # During development only
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[f"http://localhost:{repo_config['frontend']['port']}"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -52,119 +57,167 @@ with open(config_path, "r") as config_file:
 EVALUATION_MODEL = config.get("evaluation_model", "gpt-4o-mini")
 SCORING_MODEL = config.get("scoring_model", "gpt-4o-mini")
 
-logger.info(f"Loaded model configuration: Evaluation model: {EVALUATION_MODEL}, Scoring model: {SCORING_MODEL}")
-
-@app.on_event("startup")
-async def startup_event():
-    await verify_database()
-
 class SystemPrompt(BaseModel):
     prompt: str
 
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: list[WebSocket] = []
-
+        self._active_connections: Set[WebSocket] = set()
+        self._connection_tasks: Dict[WebSocket, asyncio.Task] = {}
+        self._heartbeat_interval = 30
+        
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
-        self.active_connections.append(websocket)
-
+        self._active_connections.add(websocket)
+        self._connection_tasks[websocket] = asyncio.create_task(self._heartbeat(websocket))
+        
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
-
-    async def send_personal_message(self, message: str, websocket: WebSocket):
-        await websocket.send_text(message)
-
-    async def broadcast(self, message: str):
-        for connection in self.active_connections:
-            await connection.send_text(message)
+        self._active_connections.discard(websocket)
+        if websocket in self._connection_tasks:
+            self._connection_tasks[websocket].cancel()
+            del self._connection_tasks[websocket]
+        
+    async def _heartbeat(self, websocket: WebSocket):
+        try:
+            while True:
+                await asyncio.sleep(self._heartbeat_interval)
+                try:
+                    await websocket.send_json({"type": "ping"})
+                except Exception:
+                    self.disconnect(websocket)
+                    break
+        except asyncio.CancelledError:
+            pass
+            
+    async def broadcast(self, message: Dict[str, Any]):
+        disconnect_ws = set()
+        for websocket in self._active_connections:
+            try:
+                await websocket.send_json(message)
+            except Exception as e:
+                logger.error(f"Error broadcasting to websocket: {e}")
+                disconnect_ws.add(websocket)
+        
+        for ws in disconnect_ws:
+            self.disconnect(ws)
+            
+    async def send_personal_message(self, message: Dict[str, Any], websocket: WebSocket):
+        try:
+            await websocket.send_json(message)
+        except Exception as e:
+            logger.error(f"Error sending personal message: {e}")
+            self.disconnect(websocket)
 
 manager = ConnectionManager()
 
-async def analyze_test_cases(session: AsyncSession) -> dict:
-    # Use join to eagerly load relationships
-    stmt = (
-        select(TestCase)
-        .options(selectinload(TestCase.criterion))
-        .join(Criterion)
-        .join(EvaluationType)
-        .where(EvaluationType.name == "speech_to_text")
-    )
-    
-    result = await session.execute(stmt)
-    test_cases = result.scalars().all()
-    
-    criteria_counts = {}
-    for case in test_cases:
-        await session.refresh(case, ['criterion'])  # Ensure criterion is loaded
-        criterion_name = case.criterion.name
-        if criterion_name not in criteria_counts:
-            criteria_counts[criterion_name] = 0
-        criteria_counts[criterion_name] += 1
-    
-    return {
-        "criteria": {k: snake_to_title_case(k) for k in criteria_counts.keys()},
-        "counts_per_criterion": criteria_counts,
-        "total_test_cases": len(test_cases)
-    }
+async def analyze_test_cases(session: Any) -> dict:
+    for _ in range(3):
+        try:
+            stmt = (
+                select(TestCase)
+                .options(selectinload(TestCase.criterion))
+                .join(Criterion)
+                .join(EvaluationType)
+                .where(EvaluationType.name == "speech_to_text")
+            )
+            
+            result = await session.execute(stmt)
+            test_cases = result.scalars().all()
+            
+            criteria_counts = {}
+            for case in test_cases:
+                criterion_name = case.criterion.name
+                if criterion_name not in criteria_counts:
+                    criteria_counts[criterion_name] = 0
+                criteria_counts[criterion_name] += 1
+            
+            data = {
+                "criteria": {k: snake_to_title_case(k) for k in criteria_counts.keys()},
+                "counts_per_criterion": criteria_counts,
+                "total_test_cases": len(test_cases)
+            }
+            
+            return data
+            
+        except Exception as e:
+            logger.error(f"Error analyzing test cases: {e}", exc_info=True)
+            if _ == 2:
+                raise HTTPException(status_code=500, detail=str(e))
+            await asyncio.sleep(1)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            data = await websocket.receive_text()
-            await manager.send_personal_message(f"You wrote: {data}", websocket)
-            await manager.broadcast(f"Client says: {data}")
-    except WebSocketDisconnect:
+            try:
+                data = await websocket.receive_text()
+                await manager.send_personal_message({"message": f"Received: {data}"}, websocket)
+            except WebSocketDisconnect:
+                manager.disconnect(websocket)
+                break
+            except Exception as e:
+                logger.error(f"WebSocket error: {e}")
+                break
+    finally:
         manager.disconnect(websocket)
-        await manager.broadcast("Client disconnected")
 
 @app.get("/config")
 async def get_config():
     return {"backendPort": repo_config["backend"]["port"]}
 
 @app.get("/test-case-analysis")
-async def get_test_case_analysis(session: AsyncSession = Depends(get_async_session)):
-    return await analyze_test_cases(session)
+async def get_test_case_analysis():
+    async with get_async_session() as session:
+        try:
+            return await analyze_test_cases(session)
+        except Exception as e:
+            logger.error(f"Error in test case analysis: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
 
 async def evaluate_output(input_text: str, output_text: str, criterion: str, description: str):
-    evaluation_prompt = f"""
-    Evaluate the following language model output based on the given input, criterion, and description.
-    Determine if the output meets the specified criterion.
+    for _ in range(3):
+        try:
+            evaluation_prompt = f"""
+            Evaluate the following language model output based on the given input, criterion, and description.
+            Determine if the output meets the specified criterion.
 
-    Input: {input_text}
-    Output: {output_text}
-    Criterion: {criterion}
-    Description: {description}
+            Input: {input_text}
+            Output: {output_text}
+            Criterion: {criterion}
+            Description: {description}
 
-    Respond with either "pass" or "fail" followed by a brief explanation (max 50 words).
-    """
+            Respond with either "pass" or "fail" followed by a brief explanation (max 50 words).
+            """
 
-    try:
-        response = client.chat.completions.create(
-            model=SCORING_MODEL,
-            messages=[
-                {"role": "system", "content": "You are an expert evaluator of language model outputs. Your task is to fairly and accurately assess the quality of responses based on given criteria."},
-                {"role": "user", "content": evaluation_prompt}
-            ],
-            max_tokens=1000,
-            temperature=0.3
-        )
-        evaluation = response.choices[0].message.content.strip()
-        pass_fail = "pass" if evaluation.lower().startswith("pass") else "fail"
-        explanation = evaluation.replace("pass", "", 1).replace("fail", "", 1).strip()
-        return {"result": pass_fail, "explanation": explanation}
-    except Exception as e:
-        logger.error(f"Error in GPT-4 evaluation: {str(e)}")
-        return {"result": "error", "explanation": str(e)}
+            response = await asyncio.to_thread(
+                client.chat.completions.create,
+                model=SCORING_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are an expert evaluator of language model outputs. Your task is to fairly and accurately assess the quality of responses based on given criteria."},
+                    {"role": "user", "content": evaluation_prompt}
+                ],
+                max_tokens=1000,
+                temperature=0.3
+            )
+            
+            evaluation = response.choices[0].message.content.strip()
+            pass_fail = "pass" if evaluation.lower().startswith("pass") else "fail"
+            explanation = evaluation.replace("pass", "", 1).replace("fail", "", 1).strip()
+            return {"result": pass_fail, "explanation": explanation}
+            
+        except Exception as e:
+            logger.error(f"Error in evaluation: {str(e)}")
+            if _ == 2:
+                return {"result": "error", "explanation": str(e)}
+            await asyncio.sleep(1)
 
 @app.post("/evaluate")
 async def evaluate(system_prompt: SystemPrompt):
-    logger.info(f"Received evaluation request with prompt: {system_prompt.prompt}")
-    try:
-        async with get_async_session() as session:
-            # Get evaluation type and test cases
+    logger.info(f"Starting evaluation with prompt: {system_prompt.prompt}")
+    
+    async with get_async_session() as session:
+        try:
             eval_type = await session.execute(
                 select(EvaluationType).where(EvaluationType.name == "speech_to_text")
             )
@@ -179,9 +232,7 @@ async def evaluate(system_prompt: SystemPrompt):
             test_cases = test_cases.scalars().all()
             
             analysis = await analyze_test_cases(session)
-            logger.info(f"Loaded {analysis['total_test_cases']} test cases")
-
-            # Create evaluation record
+            
             evaluation = Evaluation(
                 evaluation_type_id=eval_type.id,
                 system_prompt=system_prompt.prompt,
@@ -190,42 +241,34 @@ async def evaluate(system_prompt: SystemPrompt):
             session.add(evaluation)
             await session.flush()
 
-            results = []
             total_cases = analysis["total_test_cases"]
             criteria_counts = {criterion: {'total': count, 'processed': 0} 
                              for criterion, count in analysis["counts_per_criterion"].items()}
-            scoring_results = []
-
+            
             for index, case in enumerate(test_cases, start=1):
-                logger.info(f"Processing case {case.id}")
-
-                criterion = case.criterion.name
-                messages = [
-                    {"role": "system", "content": system_prompt.prompt},
-                    {"role": "user", "content": case.input}
-                ]
-
                 try:
+                    criterion = case.criterion.name
+                    messages = [
+                        {"role": "system", "content": system_prompt.prompt},
+                        {"role": "user", "content": case.input}
+                    ]
+
                     response = await asyncio.to_thread(
                         client.chat.completions.create,
                         model=EVALUATION_MODEL,
                         messages=messages,
                         max_tokens=1500,
-                        temperature=0.0,
-                        top_p=1,
-                        frequency_penalty=0,
-                        presence_penalty=0
+                        temperature=0.0
                     )
 
                     assistant_response = response.choices[0].message.content.strip()
                     evaluation_result = await evaluate_output(
                         case.input, 
-                        assistant_response, 
+                        assistant_response,
                         criterion,
                         case.description
                     )
 
-                    # Create evaluation result record
                     result = EvaluationResult(
                         evaluation_id=evaluation.id,
                         test_case_id=case.id,
@@ -235,21 +278,6 @@ async def evaluate(system_prompt: SystemPrompt):
                     )
                     session.add(result)
                     await session.flush()
-
-                    result_dict = {
-                        "id": case.id,
-                        "input": case.input,
-                        "criterion": criterion,
-                        "description": case.description,
-                        "output": assistant_response,
-                        "evaluation": evaluation_result
-                    }
-                    results.append(result_dict)
-                    scoring_results.append({
-                        "id": case.id,
-                        "criterion": criterion,
-                        "evaluation": evaluation_result
-                    })
 
                     criteria_counts[criterion]['processed'] += 1
                     progress = {
@@ -262,49 +290,42 @@ async def evaluate(system_prompt: SystemPrompt):
                             "result": evaluation_result["result"]
                         }
                     }
-                    await manager.broadcast(json.dumps(progress))
+                    await manager.broadcast(progress)
 
                 except Exception as e:
-                    logger.error(f"OpenAI API error for case {case.id}: {str(e)}")
-                    result_dict = {
-                        "id": case.id,
-                        "input": case.input,
-                        "criterion": criterion,
-                        "description": case.description,
-                        "output": f"Error: {str(e)}",
-                        "evaluation": {"result": "error", "explanation": str(e)}
+                    logger.error(f"Error processing case {case.id}: {str(e)}")
+                    progress = {
+                        "total_progress": f"{index}/{total_cases}",
+                        "criteria_progress": criteria_counts,
+                        "stage": "error",
+                        "error": str(e)
                     }
-                    results.append(result_dict)
-                    scoring_results.append({
-                        "id": case.id,
-                        "criterion": criterion,
-                        "evaluation": {"result": "error", "explanation": str(e)}
-                    })
+                    await manager.broadcast(progress)
 
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.5)
 
+            await session.commit()
+            
             final_progress = {
                 "total_progress": f"{total_cases}/{total_cases}",
                 "criteria_progress": criteria_counts,
-                "stage": "completed",
-                "scoring_results": scoring_results
+                "stage": "completed"
             }
-            await manager.broadcast(json.dumps(final_progress))
+            await manager.broadcast(final_progress)
             
-            logger.info("Evaluation and scoring completed")
-            return {"message": "Evaluation and scoring completed", "evaluation_id": evaluation.id}
+            return {"message": "Evaluation completed", "evaluation_id": evaluation.id}
 
-    except Exception as e:
-        logger.error(f"Error during evaluation: {str(e)}", exc_info=True)
-        await manager.broadcast(json.dumps({"status": "error", "message": str(e)}))
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/")
-async def root():
-    return {"message": "Hello World"}
+        except Exception as e:
+            logger.error(f"Evaluation error: {str(e)}", exc_info=True)
+            await manager.broadcast({"status": "error", "message": str(e)})
+            raise HTTPException(status_code=500, detail=str(e))
 
 def get_port():
     return repo_config["backend"]["port"]
+
+@app.on_event("startup")
+async def startup_event():
+    await verify_database()
 
 if __name__ == "__main__":
     import uvicorn
