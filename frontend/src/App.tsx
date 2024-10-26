@@ -17,6 +17,7 @@ function App() {
   const [totalScore, setTotalScore] = useState<number>(0);
   const [evaluationComplete, setEvaluationComplete] = useState(false);
   const [processedTestCases, setProcessedTestCases] = useState<number>(0);
+  const [activeCriterion, setActiveCriterion] = useState<string | undefined>();
   const processedIds = useRef(new Set<number>());
   const [testCaseAnalysis, setTestCaseAnalysis] = useState<TestCaseAnalysis | null>(null);
   const reconnectAttempts = useRef(0);
@@ -61,6 +62,7 @@ function App() {
           const { id, criterion, result } = data.current_result;
           console.log('Processing result:', { id, criterion, result });
           
+          setActiveCriterion(criterion);
           setCriteriaResults(prevResults => {
             const newResults = { ...prevResults };
             if (!newResults[criterion]) newResults[criterion] = {};
@@ -78,11 +80,13 @@ function App() {
         if (data.stage === 'completed') {
           setEvaluationStarted(false);
           setEvaluationComplete(true);
+          setActiveCriterion(undefined);
           setSnackbarMessage('Evaluation completed successfully');
           setSnackbarOpen(true);
         } else if (data.stage === 'error') {
           setError(data.error || 'An unknown error occurred');
           setEvaluationStarted(false);
+          setActiveCriterion(undefined);
           setSnackbarMessage('Evaluation failed');
           setSnackbarOpen(true);
         }
@@ -160,6 +164,7 @@ function App() {
     setCriteriaResults({});
     setTotalScore(0);
     setProcessedTestCases(0);
+    setActiveCriterion(undefined);
     processedIds.current.clear();
 
     try {
@@ -215,6 +220,7 @@ function App() {
             testCaseAnalysis={testCaseAnalysis}
             criteriaResults={criteriaResults}
             error={error}
+            activeCriterion={activeCriterion}
           />
         </Grid>
       </Grid>
