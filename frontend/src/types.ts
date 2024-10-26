@@ -30,4 +30,5 @@ export interface EvaluationSettings {
   temperature: number;
   system_prompt: string;
   evaluation_prompt_template: string;
+  scoring_model?: string;
 }

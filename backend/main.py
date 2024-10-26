@@ -166,7 +166,8 @@ async def websocket_endpoint(websocket: WebSocket):
 async def get_config():
     return {
         "backendPort": repo_config["backend"]["port"],
-        "model": config["evaluation_model"]
+        "model": config["evaluation_model"],
+        "scoringModel": config["scoring_model"]
     }
 
 @app.get("/evaluation-settings")

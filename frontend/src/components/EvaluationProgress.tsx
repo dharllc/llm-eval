@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Paper, Typography, Box, LinearProgress, Alert, CircularProgress, IconButton } from '@mui/material';
-import { Eye, EyeOff } from 'lucide-react';
+import { Settings2 } from 'lucide-react';
 import { TotalScore } from './TotalScore';
 import { CriteriaResults } from './CriteriaResults';
 import { TestCaseAnalysis, TestCaseResult, EvaluationSettings } from '../types';
@@ -14,6 +14,7 @@ interface EvaluationProgressProps {
   criteriaResults: { [criterion: string]: { [id: number]: TestCaseResult } };
   error: string | null;
   activeCriterion?: string;
+  scoringModel: string;
 }
 
 export const EvaluationProgress: React.FC<EvaluationProgressProps> = ({
@@ -24,7 +25,8 @@ export const EvaluationProgress: React.FC<EvaluationProgressProps> = ({
   testCaseAnalysis,
   criteriaResults,
   error,
-  activeCriterion
+  activeCriterion,
+  scoringModel
 }) => {
   const [showEvalDetails, setShowEvalDetails] = useState(false);
   const [evalSettings, setEvalSettings] = useState<EvaluationSettings | null>(null);
@@ -64,8 +66,18 @@ export const EvaluationProgress: React.FC<EvaluationProgressProps> = ({
           onClick={() => setShowEvalDetails(!showEvalDetails)}
           size="small"
           color="primary"
+          sx={{
+            transition: 'transform 0.3s ease, background-color 0.2s ease',
+            transform: showEvalDetails ? 'rotate(180deg)' : 'rotate(0)',
+            bgcolor: showEvalDetails ? 'primary.main' : 'transparent',
+            color: showEvalDetails ? 'white' : 'primary.main',
+            '&:hover': {
+              bgcolor: showEvalDetails ? 'primary.dark' : 'primary.light',
+              color: showEvalDetails ? 'white' : 'primary.main',
+            }
+          }}
         >
-          {showEvalDetails ? <EyeOff size={20} /> : <Eye size={20} />}
+          <Settings2 size={20} />
         </IconButton>
       </Box>
 
@@ -81,6 +93,9 @@ export const EvaluationProgress: React.FC<EvaluationProgressProps> = ({
           borderColor: 'grey.200'
         }}>
           <Typography variant="subtitle2" gutterBottom>Evaluation Settings</Typography>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            <strong>Scoring Model:</strong> {scoringModel} {scoringModel === 'gpt-4o-mini' && '(default)'}
+          </Typography>
           <Typography variant="body2" sx={{ mb: 1 }}>
             <strong>Temperature:</strong> {evalSettings.temperature}
           </Typography>

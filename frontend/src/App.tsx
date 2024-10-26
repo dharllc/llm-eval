@@ -12,6 +12,8 @@ function App() {
   const [evaluationStarted, setEvaluationStarted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [backendPort, setBackendPort] = useState<number | null>(null);
+  const [modelName, setModelName] = useState<string>('');
+  const [scoringModel, setScoringModel] = useState<string>('');
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [criteriaResults, setCriteriaResults] = useState<{[criterion: string]: {[id: number]: TestCaseResult}}>({});
   const [totalScore, setTotalScore] = useState<number>(0);
@@ -133,6 +135,8 @@ function App() {
         const response = await fetch(`http://localhost:${process.env.REACT_APP_BACKEND_PORT}/config`);
         const data = await response.json();
         setBackendPort(data.backendPort);
+        setModelName(data.model);
+        setScoringModel(data.scoringModel);
         await fetchAnalysis(data.backendPort);
         setupWebSocket(data.backendPort);
       } catch (error) {
@@ -201,7 +205,7 @@ function App() {
               Language Model
             </Typography>
             <Typography variant="body1">
-              Current model: GPT-4o-mini (default)
+              Current model: {modelName} {modelName === 'gpt-4o-mini' && '(default)'}
             </Typography>
           </Paper>
           <Paper elevation={3} sx={{ p: 3 }}>
@@ -221,6 +225,7 @@ function App() {
             criteriaResults={criteriaResults}
             error={error}
             activeCriterion={activeCriterion}
+            scoringModel={scoringModel}
           />
         </Grid>
       </Grid>
