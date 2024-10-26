@@ -36,8 +36,8 @@ with open(repo_config_path, "r") as config_file:
 
 origins = [
     f"http://localhost:{repo_config['frontend']['port']}",
-    "http://localhost:3004",  # Hardcoded fallback
-    "*"  # During development only
+    "http://localhost:3004",
+    "*"
 ]
 
 app.add_middleware(
@@ -164,7 +164,15 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/config")
 async def get_config():
-    return {"backendPort": repo_config["backend"]["port"]}
+    return {
+        "backendPort": repo_config["backend"]["port"],
+        "model": config["evaluation_model"],
+        "scoringModel": config["scoring_model"]
+    }
+
+@app.get("/evaluation-settings")
+async def get_evaluation_settings():
+    return config["evaluation_settings"]
 
 @app.get("/test-case-analysis")
 async def get_test_case_analysis():
@@ -178,27 +186,23 @@ async def get_test_case_analysis():
 async def evaluate_output(input_text: str, output_text: str, criterion: str, description: str):
     for _ in range(3):
         try:
-            evaluation_prompt = f"""
-            Evaluate the following language model output based on the given input, criterion, and description.
-            Determine if the output meets the specified criterion.
-
-            Input: {input_text}
-            Output: {output_text}
-            Criterion: {criterion}
-            Description: {description}
-
-            Respond with either "pass" or "fail" followed by a brief explanation (max 50 words).
-            """
+            settings = config["evaluation_settings"]
+            evaluation_prompt = settings["evaluation_prompt_template"].format(
+                input=input_text,
+                output=output_text,
+                criterion=criterion,
+                description=description
+            )
 
             response = await asyncio.to_thread(
                 client.chat.completions.create,
                 model=SCORING_MODEL,
                 messages=[
-                    {"role": "system", "content": "You are an expert evaluator of language model outputs. Your task is to fairly and accurately assess the quality of responses based on given criteria."},
+                    {"role": "system", "content": settings["system_prompt"]},
                     {"role": "user", "content": evaluation_prompt}
                 ],
                 max_tokens=1000,
-                temperature=0.3
+                temperature=settings["temperature"]
             )
             
             evaluation = response.choices[0].message.content.strip()
@@ -258,7 +262,7 @@ async def evaluate(system_prompt: SystemPrompt):
                         model=EVALUATION_MODEL,
                         messages=messages,
                         max_tokens=1500,
-                        temperature=0.0
+                        temperature=config["evaluation_settings"]["temperature"]
                     )
 
                     assistant_response = response.choices[0].message.content.strip()
