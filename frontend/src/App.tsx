@@ -1,3 +1,4 @@
+// frontend/src/App.tsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Grid, Paper, Typography, Alert, Snackbar } from '@mui/material';
 import { AppLayout } from './components/AppLayout';
@@ -26,6 +27,7 @@ function App() {
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const wsRef = useRef<WebSocket | null>(null);
+  const [currentEvaluationId, setCurrentEvaluationId] = useState<number | undefined>();
 
   const setupWebSocket = useCallback((port: number) => {
     const socket = new WebSocket(`ws://localhost:${port}/ws`);
@@ -61,7 +63,10 @@ function App() {
         console.log('WebSocket received data:', data);
         
         if (data.current_result) {
-          const { id, criterion, result } = data.current_result;
+          const { id, criterion, result, evaluation_id } = data.current_result;
+          if (evaluation_id) {
+            setCurrentEvaluationId(evaluation_id);
+          }
           console.log('Processing result:', { id, criterion, result });
           
           setActiveCriterion(criterion);
@@ -169,6 +174,7 @@ function App() {
     setTotalScore(0);
     setProcessedTestCases(0);
     setActiveCriterion(undefined);
+    setCurrentEvaluationId(undefined);
     processedIds.current.clear();
 
     try {
@@ -226,6 +232,7 @@ function App() {
             error={error}
             activeCriterion={activeCriterion}
             scoringModel={scoringModel}
+            evaluationId={currentEvaluationId}
           />
         </Grid>
       </Grid>

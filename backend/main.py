@@ -60,6 +60,11 @@ SCORING_MODEL = config.get("scoring_model", "gpt-4o-mini")
 class SystemPrompt(BaseModel):
     prompt: str
 
+class TestCaseQuery(BaseModel):
+    evaluation_id: int
+    test_case_id: int
+    criterion: str
+
 class ConnectionManager:
     def __init__(self):
         self._active_connections: Set[WebSocket] = set()
@@ -144,6 +149,48 @@ async def analyze_test_cases(session: Any) -> dict:
             if _ == 2:
                 raise HTTPException(status_code=500, detail=str(e))
             await asyncio.sleep(1)
+
+@app.get("/test-case-details/{evaluation_id}/{test_case_id}")
+async def get_test_case_details(evaluation_id: int, test_case_id: int):
+    async with get_async_session() as session:
+        try:
+            # First get the test case information
+            test_case = await session.execute(
+                select(TestCase)
+                .options(selectinload(TestCase.criterion))
+                .where(TestCase.id == test_case_id)
+            )
+            test_case = test_case.scalar_one_or_none()
+            
+            if not test_case:
+                raise HTTPException(status_code=404, detail="Test case not found")
+            
+            # Then try to get the evaluation result if it exists
+            stmt = (
+                select(EvaluationResult)
+                .where(
+                    EvaluationResult.evaluation_id == evaluation_id,
+                    EvaluationResult.test_case_id == test_case_id
+                )
+            )
+            result = await session.execute(stmt)
+            eval_result = result.scalar_one_or_none()
+            
+            # Return data with or without evaluation results
+            return {
+                "id": test_case_id,
+                "input": test_case.input,
+                "description": test_case.description,
+                "output": eval_result.output if eval_result else None,
+                "result": eval_result.result if eval_result else "pending",
+                "explanation": eval_result.explanation if eval_result else None
+            }
+            
+        except HTTPException as e:
+            raise e
+        except Exception as e:
+            logger.error(f"Error fetching test case details: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -291,7 +338,8 @@ async def evaluate(system_prompt: SystemPrompt):
                         "current_result": {
                             "id": case.id,
                             "criterion": criterion,
-                            "result": evaluation_result["result"]
+                            "result": evaluation_result["result"],
+                            "evaluation_id": evaluation.id
                         }
                     }
                     await manager.broadcast(progress)

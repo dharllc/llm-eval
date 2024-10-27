@@ -1,6 +1,8 @@
-import React from 'react';
-import { Box, Typography } from '@mui/material';
-import { TestCaseResult } from '../types';
+// frontend/src/components/CriteriaResults.tsx
+import React, { useState } from 'react';
+import { Box, Typography, Popover } from '@mui/material';
+import { TestCaseResult, TestCaseDetails as TestCaseDetailsType } from '../types';
+import { TestCaseDetails } from './TestCaseDetails';
 
 interface CriteriaResultsProps {
   criteria: { [key: string]: string };
@@ -8,6 +10,7 @@ interface CriteriaResultsProps {
   countsPerCriterion: { [key: string]: number };
   evaluationStarted: boolean;
   activeCriterion?: string;
+  evaluationId?: number;
 }
 
 export const CriteriaResults: React.FC<CriteriaResultsProps> = ({
@@ -15,29 +18,127 @@ export const CriteriaResults: React.FC<CriteriaResultsProps> = ({
   criteriaResults,
   countsPerCriterion,
   evaluationStarted,
-  activeCriterion
+  activeCriterion,
+  evaluationId
 }) => {
+  const [hoveredCase, setHoveredCase] = useState<{ id: number, criterion: string } | null>(null);
+  const [selectedCase, setSelectedCase] = useState<{ id: number, criterion: string } | null>(null);
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const [testCaseDetails, setTestCaseDetails] = useState<TestCaseDetailsType | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleHover = async (
+    event: React.MouseEvent<HTMLElement>,
+    id: number, 
+    criterion: string,
+    result: TestCaseResult
+  ) => {
+    if (!evaluationId) return;
+    
+    setHoveredCase({ id, criterion });
+    setAnchorEl(event.currentTarget);
+    
+    if (!testCaseDetails || testCaseDetails.id !== id) {
+      setIsLoading(true);
+      try {
+        const response = await fetch(
+          `http://localhost:${process.env.REACT_APP_BACKEND_PORT}/test-case-details/${evaluationId}/${id}`
+        );
+        if (response.ok) {
+          const details = await response.json();
+          setTestCaseDetails(details);
+        } else {
+          console.error('Failed to fetch test case details:', await response.text());
+          setTestCaseDetails(null);
+        }
+      } catch (error) {
+        console.error('Error fetching test case details:', error);
+        setTestCaseDetails(null);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  const handleClick = async (id: number, criterion: string, result: TestCaseResult) => {
+    if (!evaluationId) return;
+    
+    if (selectedCase?.id === id) {
+      setSelectedCase(null);
+      return;
+    }
+
+    setSelectedCase({ id, criterion });
+    setIsLoading(true);
+    
+    try {
+      const response = await fetch(
+        `http://localhost:${process.env.REACT_APP_BACKEND_PORT}/test-case-details/${evaluationId}/${id}`
+      );
+      if (response.ok) {
+        const details = await response.json();
+        setTestCaseDetails(details);
+      } else {
+        console.error('Failed to fetch test case details:', await response.text());
+        setTestCaseDetails(null);
+        setSelectedCase(null);
+      }
+    } catch (error) {
+      console.error('Error fetching test case details:', error);
+      setTestCaseDetails(null);
+      setSelectedCase(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (!selectedCase) {
+      setHoveredCase(null);
+      setAnchorEl(null);
+    }
+  };
+
   const renderProgressBar = (criterion: string) => {
     const count = countsPerCriterion[criterion] || 5;
     const results = criteriaResults[criterion] || {};
-    const criterionIds = Object.keys(results).map(Number).filter(id => results[id] !== undefined).sort((a, b) => a - b);
+    const criterionIds = Object.keys(results).map(Number)
+      .filter(id => results[id] !== undefined)
+      .sort((a, b) => a - b);
+    
     const resultArray = Array.from({ length: count }, (_, index) => {
       const id = criterionIds[index];
-      return id !== undefined ? results[id] : 'pending';
+      return {
+        id: id,
+        result: id !== undefined ? results[id] : 'pending'
+      };
     });
 
     return (
       <Box sx={{ display: 'flex', mt: 1, mb: 1 }}>
-        {resultArray.map((result, index) => (
-          <Box key={index} sx={{
-            flex: 1,
-            height: 20,
-            backgroundColor: result === 'pass' ? 'success.light' : result === 'fail' ? 'error.light' : 'grey.300',
-            mx: 0.5,
-            borderRadius: 1,
-            transition: 'all 0.3s ease',
-            opacity: evaluationStarted && criterion !== activeCriterion ? 0.7 : 1
-          }}/>
+        {resultArray.map(({ id, result }, index) => (
+          <Box 
+            key={index} 
+            onClick={() => id && handleClick(id, criterion, result)}
+            onMouseEnter={(e) => id && handleHover(e, id, criterion, result)}
+            onMouseLeave={handleMouseLeave}
+            sx={{
+              flex: 1,
+              height: 20,
+              backgroundColor: result === 'pass' ? 'success.light' : 
+                             result === 'fail' ? 'error.light' : 
+                             'grey.300',
+              mx: 0.5,
+              borderRadius: 1,
+              transition: 'all 0.3s ease',
+              opacity: evaluationStarted && criterion !== activeCriterion ? 0.7 : 1,
+              cursor: id ? 'pointer' : 'default',
+              '&:hover': id ? {
+                transform: 'scale(1.05)',
+                boxShadow: 2
+              } : undefined
+            }}
+          />
         ))}
       </Box>
     );
@@ -47,7 +148,7 @@ export const CriteriaResults: React.FC<CriteriaResultsProps> = ({
     Object.values(criteriaResults[criterion] || {}).filter(result => result === 'pass').length;
 
   return (
-    <Box sx={{ mt: 3 }}>
+    <Box sx={{ mt: 3, position: 'relative' }}>
       <Typography variant="h6" gutterBottom>Evaluation Criteria</Typography>
       {Object.entries(criteria).map(([criterion, displayName], index) => (
         <Box key={criterion} sx={{
@@ -67,32 +168,79 @@ export const CriteriaResults: React.FC<CriteriaResultsProps> = ({
             </Typography>
           </Box>
           {renderProgressBar(criterion)}
-          {evaluationStarted && criterion === activeCriterion && (
-            <Box sx={{ 
-              height: 2, 
-              mt: 1,
-              backgroundColor: 'primary.main',
-              width: '100%',
-              position: 'relative',
-              overflow: 'hidden',
-              '&::after': {
-                content: '""',
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '30%',
-                height: '100%',
-                background: 'rgba(255, 255, 255, 0.3)',
-                animation: 'pulse 1.5s ease-in-out infinite'
-              },
-              '@keyframes pulse': {
-                '0%': { transform: 'translateX(-100%)' },
-                '100%': { transform: 'translateX(400%)' }
-              }
-            }} />
-          )}
         </Box>
       ))}
+
+      <Popover
+        open={Boolean(anchorEl) && !selectedCase && Boolean(hoveredCase)}
+        anchorEl={anchorEl}
+        onClose={() => {
+          if (!selectedCase) {
+            setAnchorEl(null);
+            setHoveredCase(null);
+          }
+        }}
+        anchorOrigin={{
+          vertical: 'bottom',
+          horizontal: 'center',
+        }}
+        transformOrigin={{
+          vertical: 'top',
+          horizontal: 'center',
+        }}
+        sx={{
+          pointerEvents: 'none',
+        }}
+      >
+        <Box sx={{ p: 2, maxWidth: 300 }}>
+          {isLoading ? (
+            <Typography>Loading...</Typography>
+          ) : testCaseDetails ? (
+            <>
+              <Typography variant="subtitle2" gutterBottom>
+                {testCaseDetails.result === 'pass' ? '✓ Pass' : 
+                 testCaseDetails.result === 'fail' ? '✗ Fail' : 
+                 '⋯ In Progress'}
+              </Typography>
+              {testCaseDetails.explanation && (
+                <Typography variant="body2">{testCaseDetails.explanation}</Typography>
+              )}
+              {testCaseDetails.input && (
+                <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
+                  Input: {testCaseDetails.input}
+                </Typography>
+              )}
+            </>
+          ) : (
+            <Typography>Details not available yet</Typography>
+          )}
+        </Box>
+      </Popover>
+
+      {selectedCase && testCaseDetails && (
+        <Box
+          sx={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            bgcolor: 'rgba(0, 0, 0, 0.5)',
+            zIndex: 999
+          }}
+          onClick={() => setSelectedCase(null)}
+        >
+          <Box onClick={e => e.stopPropagation()}>
+            <TestCaseDetails
+              details={testCaseDetails}
+              onClose={() => setSelectedCase(null)}
+            />
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 };
