@@ -15,6 +15,7 @@ interface EvaluationProgressProps {
   error: string | null;
   activeCriterion?: string;
   scoringModel: string;
+  evaluationId?: number;
 }
 
 export const EvaluationProgress: React.FC<EvaluationProgressProps> = ({
@@ -26,7 +27,8 @@ export const EvaluationProgress: React.FC<EvaluationProgressProps> = ({
   criteriaResults,
   error,
   activeCriterion,
-  scoringModel
+  scoringModel,
+  evaluationId
 }) => {
   const [showEvalDetails, setShowEvalDetails] = useState(false);
   const [evalSettings, setEvalSettings] = useState<EvaluationSettings | null>(null);
@@ -166,6 +168,7 @@ export const EvaluationProgress: React.FC<EvaluationProgressProps> = ({
         countsPerCriterion={testCaseAnalysis.counts_per_criterion}
         evaluationStarted={evaluationStarted}
         activeCriterion={activeCriterion}
+        evaluationId={evaluationId}
       />
     </Paper>
   );

@@ -1,9 +1,19 @@
+// types.ts
 export type TestCaseResult = 'pending' | 'pass' | 'fail';
 
 export interface TestCaseAnalysis {
   criteria: { [key: string]: string };
   counts_per_criterion: { [key: string]: number };
   total_test_cases: number;
+}
+
+export interface TestCaseDetails {
+  id: number;
+  input: string;
+  description: string;
+  output: string;
+  result: TestCaseResult;
+  explanation: string;
 }
 
 export interface WebSocketMessage {
@@ -20,6 +30,7 @@ export interface WebSocketMessage {
     id: number;
     criterion: string;
     result: TestCaseResult;
+    evaluation_id?: number;
   };
   error?: string;
   status?: string;
