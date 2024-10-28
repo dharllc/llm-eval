@@ -211,9 +211,33 @@ function App() {
     // Reset current evaluation state
     setEvaluationStarted(false);
     setEvaluationComplete(true);
-    setCriteriaResults(evaluation.scores_by_criteria || {});
+    
+    // Transform test_case_results into criteriaResults format
+    const formattedResults: { [criterion: string]: { [id: number]: TestCaseResult } } = {};
+    
+    // If we have test_case_results, use that to build the criteria results
+    if (evaluation.test_case_results) {
+      Object.values(evaluation.test_case_results).forEach(testCase => {
+        if (!formattedResults[testCase.criterion]) {
+          formattedResults[testCase.criterion] = {};
+        }
+        formattedResults[testCase.criterion][testCase.id] = testCase.result;
+      });
+    }
+    // If no test_case_results but have scores_by_criteria, use that as fallback
+    else if (evaluation.scores_by_criteria) {
+      Object.entries(evaluation.scores_by_criteria).forEach(([criterion, results]) => {
+        formattedResults[criterion] = {};
+        results.forEach((result, index) => {
+          formattedResults[criterion][index] = result;
+        });
+      });
+    }
+    
+    setCriteriaResults(formattedResults);
     setTotalScore(evaluation.total_score);
     setCurrentEvaluationId(evaluation.id);
+    setProcessedTestCases(evaluation.total_score); // Set processed cases to match total score
   }, []);
 
   return (

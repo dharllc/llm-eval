@@ -56,11 +56,8 @@ export interface Evaluation {
   token_count: number;  // Keeping for backward compatibility
   total_tokens: number; // New field from accurate counting
   test_case_results: { [key: number]: TestCaseDetails };
-  scores_by_criteria?: {  // Made optional since we're transitioning away from it
-    [criterion: string]: {
-      pass_count: number;
-      total_count: number;
-    }
+  scores_by_criteria: {  // Made required and updated structure
+    [criterion: string]: TestCaseResult[];  // Array of pass/fail results for each criterion
   }
 }
 
