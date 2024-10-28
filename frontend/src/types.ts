@@ -1,4 +1,4 @@
-// types.ts
+// frontend/src/types.ts
 export type TestCaseResult = 'pending' | 'pass' | 'fail';
 
 export interface TestCaseAnalysis {
@@ -53,11 +53,11 @@ export interface Evaluation {
   system_prompt: string;
   model_name: string;
   total_score: number;
-  token_count: number;  // Keeping for backward compatibility
-  total_tokens: number; // New field from accurate counting
+  token_count: number;  
+  total_tokens: number; 
   test_case_results: { [key: number]: TestCaseDetails };
-  scores_by_criteria: {  // Made required and updated structure
-    [criterion: string]: TestCaseResult[];  // Array of pass/fail results for each criterion
+  scores_by_criteria: {  
+    [criterion: string]: TestCaseResult[];  
   }
 }
 
