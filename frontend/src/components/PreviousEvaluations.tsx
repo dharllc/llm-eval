@@ -1,5 +1,4 @@
-// frontend/src/components/PreviousEvaluations.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Paper, 
   Typography, 
@@ -15,7 +14,8 @@ import {
   Tooltip,
   Alert
 } from '@mui/material';
-import { Evaluation } from '../types';
+import { Evaluation, WebSocketMessage } from '../types';
+import { TrendChart } from './TrendChart';
 
 interface PreviousEvaluationsProps {
   backendPort?: number | null;
@@ -41,16 +41,15 @@ export const PreviousEvaluations: React.FC<PreviousEvaluationsProps> = ({
     page: 1,
     pages: 0
   });
+  const [allEvaluations, setAllEvaluations] = useState<Evaluation[]>([]);
+  const [ws, setWs] = useState<WebSocket | null>(null);
 
-  const fetchEvaluations = async () => {
+  const fetchAllEvaluations = async () => {
     if (!backendPort) return;
-    
-    setLoading(true);
-    setError(null);
     
     try {
       const response = await fetch(
-        `http://localhost:${backendPort}/evaluations?page=${page + 1}&limit=${rowsPerPage}`,
+        `http://localhost:${backendPort}/evaluations?page=1&limit=1000`,
         {
           credentials: 'include',
           headers: { 'Accept': 'application/json' }
@@ -60,24 +59,80 @@ export const PreviousEvaluations: React.FC<PreviousEvaluationsProps> = ({
       if (!response.ok) throw new Error('Failed to fetch evaluations');
       
       const result = await response.json();
-      setData(result);
+      const sortedEvals = [...result.evaluations].sort((a, b) => b.id - a.id);
+      setAllEvaluations(sortedEvals);
+      setData(prev => ({
+        ...prev,
+        total_count: result.total_count
+      }));
+
+      // Initialize to show the latest 20 evaluations
+      if (sortedEvals.length > 20) {
+        const startIdx = Math.max(0, sortedEvals.length - 20);
+        setData(prev => ({
+          ...prev,
+          evaluations: sortedEvals.slice(startIdx, startIdx + 20)
+        }));
+      } else {
+        setData(prev => ({
+          ...prev,
+          evaluations: sortedEvals
+        }));
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load evaluations');
+      setError(err instanceof Error ? err.message : 'Failed to fetch evaluations');
     } finally {
       setLoading(false);
     }
   };
 
+  const setupWebSocket = useCallback(() => {
+    if (!backendPort) return;
+
+    const socket = new WebSocket(`ws://localhost:${backendPort}/ws`);
+    
+    socket.onmessage = async (event) => {
+      try {
+        const data = JSON.parse(event.data) as WebSocketMessage;
+        if (data.stage === 'completed') {
+          await fetchAllEvaluations();
+        }
+      } catch (error) {
+        console.error('WebSocket message error:', error);
+      }
+    };
+
+    socket.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+
+    setWs(socket);
+
+    return () => {
+      socket.close();
+    };
+  }, [backendPort]);
+
   useEffect(() => {
-    if (backendPort) fetchEvaluations();
-  }, [backendPort, page, rowsPerPage]);
+    if (backendPort) {
+      fetchAllEvaluations();
+      const cleanup = setupWebSocket();
+      return () => {
+        cleanup?.();
+      };
+    }
+  }, [backendPort, setupWebSocket]);
 
-  const handleChangePage = (_: unknown, newPage: number) => setPage(newPage);
-
-  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
+  const handleChangePage = (_: unknown, newPage: number) => {
+    const startIdx = newPage * 20;
+    setData(prev => ({
+      ...prev,
+      evaluations: allEvaluations.slice(startIdx, startIdx + 20)
+    }));
+    setPage(newPage);
   };
+
+  const totalPages = Math.ceil(allEvaluations.length / 20);
 
   if (loading && !data.evaluations.length) {
     return (
@@ -131,10 +186,10 @@ export const PreviousEvaluations: React.FC<PreviousEvaluationsProps> = ({
                 <TableCell>{new Date(evaluation.timestamp).toLocaleString()}</TableCell>
                 <TableCell align="right">{evaluation.total_score}/25</TableCell>
                 <TableCell align="right">
-  {evaluation.total_tokens !== undefined ? evaluation.total_tokens : 
-   evaluation.token_count !== undefined ? evaluation.token_count : 
-   0}
-</TableCell>
+                  {evaluation.total_tokens !== undefined ? evaluation.total_tokens : 
+                   evaluation.token_count !== undefined ? evaluation.token_count : 
+                   0}
+                </TableCell>
                 <TableCell>{evaluation.model_name}</TableCell>
                 <TableCell sx={{ maxWidth: 300 }}>
                   <Tooltip title={evaluation.system_prompt}>
@@ -155,15 +210,16 @@ export const PreviousEvaluations: React.FC<PreviousEvaluationsProps> = ({
           </TableBody>
         </Table>
       </TableContainer>
-      <TablePagination
-        component="div"
-        count={data.total_count}
-        page={page}
-        onPageChange={handleChangePage}
-        rowsPerPage={rowsPerPage}
-        onRowsPerPageChange={handleChangeRowsPerPage}
-        rowsPerPageOptions={[5, 10, 25]}
-      />
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+        <TablePagination
+          component="div"
+          count={allEvaluations.length}
+          page={page}
+          onPageChange={handleChangePage}
+          rowsPerPage={20}
+          rowsPerPageOptions={[20]}
+        />
+      </Box>
     </Paper>
   );
 };
