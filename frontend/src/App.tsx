@@ -4,7 +4,8 @@ import { Grid, Paper, Typography, Alert, Snackbar } from '@mui/material';
 import { AppLayout } from './components/AppLayout';
 import { SystemPromptInput } from './components/SystemPromptInput';
 import { EvaluationProgress } from './components/EvaluationProgress';
-import { TestCaseAnalysis, TestCaseResult, WebSocketMessage } from './types';
+import { PreviousEvaluations } from './components/PreviousEvaluations';
+import { TestCaseAnalysis, TestCaseResult, WebSocketMessage, Evaluation } from './types';
 
 const RECONNECT_INTERVAL = 3000;
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -28,6 +29,7 @@ function App() {
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const wsRef = useRef<WebSocket | null>(null);
   const [currentEvaluationId, setCurrentEvaluationId] = useState<number | undefined>();
+  const [selectedEvaluation, setSelectedEvaluation] = useState<Evaluation | null>(null);
 
   const setupWebSocket = useCallback((port: number) => {
     const socket = new WebSocket(`ws://localhost:${port}/ws`);
@@ -90,6 +92,7 @@ function App() {
           setActiveCriterion(undefined);
           setSnackbarMessage('Evaluation completed successfully');
           setSnackbarOpen(true);
+          setSelectedEvaluation(null); // Clear any selected evaluation
         } else if (data.stage === 'error') {
           setError(data.error || 'An unknown error occurred');
           setEvaluationStarted(false);
@@ -175,6 +178,7 @@ function App() {
     setProcessedTestCases(0);
     setActiveCriterion(undefined);
     setCurrentEvaluationId(undefined);
+    setSelectedEvaluation(null);
     processedIds.current.clear();
 
     try {
@@ -202,6 +206,16 @@ function App() {
 
   const handleSnackbarClose = () => setSnackbarOpen(false);
 
+  const handleEvaluationSelect = useCallback((evaluation: Evaluation) => {
+    setSelectedEvaluation(evaluation);
+    // Reset current evaluation state
+    setEvaluationStarted(false);
+    setEvaluationComplete(true);
+    setCriteriaResults(evaluation.scores_by_criteria || {});
+    setTotalScore(evaluation.total_score);
+    setCurrentEvaluationId(evaluation.id);
+  }, []);
+
   return (
     <AppLayout>
       <Grid container spacing={3}>
@@ -218,6 +232,7 @@ function App() {
             <SystemPromptInput 
               onSubmit={handleSystemPromptSubmit}
               disabled={evaluationStarted || !ws}
+              defaultValue={selectedEvaluation?.system_prompt}
             />
           </Paper>
         </Grid>
@@ -236,6 +251,10 @@ function App() {
           />
         </Grid>
       </Grid>
+      <PreviousEvaluations 
+        backendPort={backendPort}
+        onEvaluationSelect={handleEvaluationSelect}
+      />
       <Snackbar
         open={snackbarOpen}
         autoHideDuration={6000}
