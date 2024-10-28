@@ -1,4 +1,3 @@
-// frontend/src/components/CriteriaResults.tsx
 import React, { useState } from 'react';
 import { Box, Typography, Popover } from '@mui/material';
 import { TestCaseResult, TestCaseDetails as TestCaseDetailsType } from '../types';
@@ -11,6 +10,7 @@ interface CriteriaResultsProps {
   evaluationStarted: boolean;
   activeCriterion?: string;
   evaluationId?: number;
+  detailedResults?: { [key: number]: TestCaseDetailsType };
 }
 
 export const CriteriaResults: React.FC<CriteriaResultsProps> = ({
@@ -19,7 +19,8 @@ export const CriteriaResults: React.FC<CriteriaResultsProps> = ({
   countsPerCriterion,
   evaluationStarted,
   activeCriterion,
-  evaluationId
+  evaluationId,
+  detailedResults
 }) => {
   const [hoveredCase, setHoveredCase] = useState<{ id: number, criterion: string } | null>(null);
   const [selectedCase, setSelectedCase] = useState<{ id: number, criterion: string } | null>(null);
@@ -37,6 +38,11 @@ export const CriteriaResults: React.FC<CriteriaResultsProps> = ({
     
     setHoveredCase({ id, criterion });
     setAnchorEl(event.currentTarget);
+    
+    if (detailedResults && detailedResults[id]) {
+      setTestCaseDetails(detailedResults[id]);
+      return;
+    }
     
     if (!testCaseDetails || testCaseDetails.id !== id) {
       setIsLoading(true);
@@ -69,6 +75,12 @@ export const CriteriaResults: React.FC<CriteriaResultsProps> = ({
     }
 
     setSelectedCase({ id, criterion });
+    
+    if (detailedResults && detailedResults[id]) {
+      setTestCaseDetails(detailedResults[id]);
+      return;
+    }
+    
     setIsLoading(true);
     
     try {
@@ -102,25 +114,32 @@ export const CriteriaResults: React.FC<CriteriaResultsProps> = ({
   const renderProgressBar = (criterion: string) => {
     const count = countsPerCriterion[criterion] || 5;
     const results = criteriaResults[criterion] || {};
-    const criterionIds = Object.keys(results).map(Number)
-      .filter(id => results[id] !== undefined)
-      .sort((a, b) => a - b);
     
-    const resultArray = Array.from({ length: count }, (_, index) => {
-      const id = criterionIds[index];
-      return {
-        id: id,
-        result: id !== undefined ? results[id] : 'pending'
-      };
-    });
+    let criterionResults: { id: number | undefined; result: TestCaseResult }[] = [];
+    
+    if (Array.isArray(results)) {
+      criterionResults = results.map((result, index) => ({
+        id: index,
+        result: result as TestCaseResult
+      }));
+    } else {
+      const criterionIds = Object.keys(results).map(Number)
+        .filter(id => results[id] !== undefined)
+        .sort((a, b) => a - b);
+      
+      criterionResults = Array.from({ length: count }, (_, index) => ({
+        id: criterionIds[index],
+        result: criterionIds[index] !== undefined ? results[criterionIds[index]] : 'pending'
+      }));
+    }
 
     return (
       <Box sx={{ display: 'flex', mt: 1, mb: 1 }}>
-        {resultArray.map(({ id, result }, index) => (
+        {criterionResults.map(({ id, result }, index) => (
           <Box 
             key={index} 
-            onClick={() => id && handleClick(id, criterion, result)}
-            onMouseEnter={(e) => id && handleHover(e, id, criterion, result)}
+            onClick={() => id !== undefined && handleClick(id, criterion, result)}
+            onMouseEnter={(e) => id !== undefined && handleHover(e, id, criterion, result)}
             onMouseLeave={handleMouseLeave}
             sx={{
               flex: 1,
@@ -132,8 +151,8 @@ export const CriteriaResults: React.FC<CriteriaResultsProps> = ({
               borderRadius: 1,
               transition: 'all 0.3s ease',
               opacity: evaluationStarted && criterion !== activeCriterion ? 0.7 : 1,
-              cursor: id ? 'pointer' : 'default',
-              '&:hover': id ? {
+              cursor: id !== undefined ? 'pointer' : 'default',
+              '&:hover': id !== undefined ? {
                 transform: 'scale(1.05)',
                 boxShadow: 2
               } : undefined
@@ -144,8 +163,13 @@ export const CriteriaResults: React.FC<CriteriaResultsProps> = ({
     );
   };
 
-  const getPassCountForCriterion = (criterion: string) => 
-    Object.values(criteriaResults[criterion] || {}).filter(result => result === 'pass').length;
+  const getPassCountForCriterion = (criterion: string) => {
+    const results = criteriaResults[criterion];
+    if (Array.isArray(results)) {
+      return results.filter(result => result === 'pass').length;
+    }
+    return Object.values(results || {}).filter(result => result === 'pass').length;
+  };
 
   return (
     <Box sx={{ mt: 3, position: 'relative' }}>

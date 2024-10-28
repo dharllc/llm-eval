@@ -12,6 +12,7 @@ import logging
 import asyncio
 from typing import List, Dict, Any, Set
 import weakref
+import tiktoken
 
 from database import (
     get_async_session, 
@@ -284,10 +285,14 @@ async def evaluate(system_prompt: SystemPrompt):
             
             analysis = await analyze_test_cases(session)
             
+            # Count initial system prompt tokens
+            system_prompt_tokens = count_tokens(system_prompt.prompt, EVALUATION_MODEL)
+            
             evaluation = Evaluation(
                 evaluation_type_id=eval_type.id,
                 system_prompt=system_prompt.prompt,
-                model_name=EVALUATION_MODEL
+                model_name=EVALUATION_MODEL,
+                total_tokens=system_prompt_tokens  # Initialize with system prompt tokens
             )
             session.add(evaluation)
             await session.flush()
@@ -296,12 +301,17 @@ async def evaluate(system_prompt: SystemPrompt):
             criteria_counts = {criterion: {'total': count, 'processed': 0} 
                              for criterion, count in analysis["counts_per_criterion"].items()}
             
+            total_tokens = system_prompt_tokens
+            
             for index, case in enumerate(test_cases, start=1):
                 try:
                     criterion = case.criterion.name
+                    system_message = system_prompt.prompt
+                    user_message = case.input
+                    
                     messages = [
-                        {"role": "system", "content": system_prompt.prompt},
-                        {"role": "user", "content": case.input}
+                        {"role": "system", "content": system_message},
+                        {"role": "user", "content": user_message}
                     ]
 
                     response = await asyncio.to_thread(
@@ -320,14 +330,27 @@ async def evaluate(system_prompt: SystemPrompt):
                         case.description
                     )
 
+                    # Count tokens for this interaction
+                    prompt_tokens = count_tokens(user_message, EVALUATION_MODEL)  # Just user message as system prompt counted once
+                    response_tokens = count_tokens(assistant_response, EVALUATION_MODEL)
+                    
+                    # Update total tokens
+                    total_tokens += prompt_tokens + response_tokens
+
                     result = EvaluationResult(
                         evaluation_id=evaluation.id,
                         test_case_id=case.id,
                         output=assistant_response,
                         result=evaluation_result["result"],
-                        explanation=evaluation_result["explanation"]
+                        explanation=evaluation_result["explanation"],
+                        prompt_tokens=prompt_tokens,
+                        response_tokens=response_tokens
                     )
                     session.add(result)
+                    await session.flush()
+
+                    # Update evaluation total tokens
+                    evaluation.total_tokens = total_tokens
                     await session.flush()
 
                     criteria_counts[criterion]['processed'] += 1
@@ -378,6 +401,102 @@ def get_port():
 @app.on_event("startup")
 async def startup_event():
     await verify_database()
+
+def count_tokens(text: str, model: str = "gpt-4o") -> int:
+    try:
+        encoding = tiktoken.encoding_for_model(model)
+        return len(encoding.encode(text))
+    except KeyError:
+        encoding = tiktoken.get_encoding("cl100k_base")
+        return len(encoding.encode(text))
+
+@app.get("/evaluations")
+async def get_evaluations(page: int = 1, limit: int = 5):
+    async with get_async_session() as session:
+        try:
+            count_stmt = select(Evaluation).join(EvaluationType).where(EvaluationType.name == "speech_to_text")
+            result = await session.execute(count_stmt)
+            total_count = len(result.scalars().all())
+            
+            offset = (page - 1) * limit
+            stmt = (
+                select(Evaluation)
+                .options(
+                    selectinload(Evaluation.results)
+                    .selectinload(EvaluationResult.test_case)
+                    .selectinload(TestCase.criterion)
+                )
+                .join(EvaluationType)
+                .where(EvaluationType.name == "speech_to_text")
+                .order_by(Evaluation.id.desc())
+                .offset(offset)
+                .limit(limit)
+            )
+            
+            result = await session.execute(stmt)
+            evaluations = result.scalars().all()
+            
+            evaluation_data = []
+            for eval in evaluations:
+                # Calculate token count for system prompt
+                token_count = count_tokens(eval.system_prompt, eval.model_name)
+                
+                # Process results with full test case details
+                test_case_results = {}
+                scores_by_criteria = {}
+
+                for result in eval.results:
+                    criterion_name = result.test_case.criterion.name
+                    
+                    # Initialize criteria scores if not exists
+                    if criterion_name not in scores_by_criteria:
+                        scores_by_criteria[criterion_name] = {
+                            "pass_count": 0,
+                            "total_count": 0
+                        }
+                    scores_by_criteria[criterion_name]["total_count"] += 1
+                    
+                    # Update pass count if test passed
+                    if result.result == "pass":
+                        scores_by_criteria[criterion_name]["pass_count"] += 1
+                    
+                    # Store full test case results
+                    test_case_results[result.test_case.id] = {
+                        "id": result.test_case.id,
+                        "criterion": criterion_name,
+                        "input": result.test_case.input,
+                        "description": result.test_case.description,
+                        "output": result.output,
+                        "result": result.result,
+                        "explanation": result.explanation
+                    }
+                
+                total_score = sum(
+                    criteria["pass_count"] 
+                    for criteria in scores_by_criteria.values()
+                )
+                
+                evaluation_data.append({
+                    "id": eval.id,
+                    "timestamp": eval.timestamp.isoformat(),
+                    "system_prompt": eval.system_prompt,
+                    "model_name": eval.model_name,
+                    "total_score": total_score,
+                    "token_count": token_count,
+                    "scores_by_criteria": scores_by_criteria,
+                    "test_case_results": test_case_results
+                })
+            
+            return {
+                "evaluations": evaluation_data,
+                "total_count": total_count,
+                "page": page,
+                "pages": (total_count + limit - 1) // limit
+            }
+            
+        except Exception as e:
+            logger.error(f"Error fetching evaluations: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

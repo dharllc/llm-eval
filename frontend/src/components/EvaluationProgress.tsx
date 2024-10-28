@@ -1,9 +1,10 @@
+// frontend/src/components/EvaluationProgress.tsx
 import React, { useState, useEffect } from 'react';
 import { Paper, Typography, Box, LinearProgress, Alert, CircularProgress, IconButton } from '@mui/material';
 import { Settings2 } from 'lucide-react';
 import { TotalScore } from './TotalScore';
 import { CriteriaResults } from './CriteriaResults';
-import { TestCaseAnalysis, TestCaseResult, EvaluationSettings } from '../types';
+import { TestCaseAnalysis, TestCaseResult, EvaluationSettings, TestCaseDetails } from '../types';
 
 interface EvaluationProgressProps {
   evaluationStarted: boolean;
@@ -16,6 +17,7 @@ interface EvaluationProgressProps {
   activeCriterion?: string;
   scoringModel: string;
   evaluationId?: number;
+  detailedResults?: { [key: number]: TestCaseDetails };
 }
 
 export const EvaluationProgress: React.FC<EvaluationProgressProps> = ({
@@ -28,11 +30,13 @@ export const EvaluationProgress: React.FC<EvaluationProgressProps> = ({
   error,
   activeCriterion,
   scoringModel,
-  evaluationId
+  evaluationId,
+  detailedResults
 }) => {
   const [showEvalDetails, setShowEvalDetails] = useState(false);
   const [evalSettings, setEvalSettings] = useState<EvaluationSettings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [totalTokens, setTotalTokens] = useState<number>(0);
 
   useEffect(() => {
     const fetchEvalSettings = async () => {
@@ -48,6 +52,15 @@ export const EvaluationProgress: React.FC<EvaluationProgressProps> = ({
     };
     fetchEvalSettings();
   }, []);
+
+  useEffect(() => {
+    if (detailedResults) {
+      const total = Object.values(detailedResults).reduce((sum, result) => {
+        return sum + (result.prompt_tokens || 0) + (result.response_tokens || 0);
+      }, 0);
+      setTotalTokens(total);
+    }
+  }, [detailedResults]);
 
   if (!testCaseAnalysis) {
     return (
@@ -101,6 +114,11 @@ export const EvaluationProgress: React.FC<EvaluationProgressProps> = ({
           <Typography variant="body2" sx={{ mb: 1 }}>
             <strong>Temperature:</strong> {evalSettings.temperature}
           </Typography>
+          {totalTokens > 0 && (
+            <Typography variant="body2" sx={{ mb: 1 }}>
+              <strong>Total Tokens Used:</strong> {totalTokens}
+            </Typography>
+          )}
           <Box sx={{ mb: 2 }}>
             <Typography variant="body2" sx={{ mb: 0.5 }}>
               <strong>System Prompt:</strong>
@@ -169,6 +187,7 @@ export const EvaluationProgress: React.FC<EvaluationProgressProps> = ({
         evaluationStarted={evaluationStarted}
         activeCriterion={activeCriterion}
         evaluationId={evaluationId}
+        detailedResults={detailedResults}
       />
     </Paper>
   );

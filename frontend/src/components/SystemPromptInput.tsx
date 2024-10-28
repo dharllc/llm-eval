@@ -1,15 +1,27 @@
-import React, { useState } from 'react';
+// frontend/src/components/SystemPromptInput.tsx
+import React, { useState, useEffect } from 'react';
 import { TextField, Button, Box, Typography, CircularProgress } from '@mui/material';
 
 interface SystemPromptInputProps {
   onSubmit: (prompt: string) => void;
   disabled: boolean;
+  defaultValue?: string;
 }
 
-export const SystemPromptInput: React.FC<SystemPromptInputProps> = ({ onSubmit, disabled }) => {
+export const SystemPromptInput: React.FC<SystemPromptInputProps> = ({ 
+  onSubmit, 
+  disabled,
+  defaultValue 
+}) => {
   const [prompt, setPrompt] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (defaultValue) {
+      setPrompt(defaultValue);
+    }
+  }, [defaultValue]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

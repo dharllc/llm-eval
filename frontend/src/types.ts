@@ -14,6 +14,9 @@ export interface TestCaseDetails {
   output: string;
   result: TestCaseResult;
   explanation: string;
+  criterion: string;
+  prompt_tokens?: number;
+  response_tokens?: number;
 }
 
 export interface WebSocketMessage {
@@ -42,4 +45,25 @@ export interface EvaluationSettings {
   system_prompt: string;
   evaluation_prompt_template: string;
   scoring_model?: string;
+}
+
+export interface Evaluation {
+  id: number;
+  timestamp: string;
+  system_prompt: string;
+  model_name: string;
+  total_score: number;
+  token_count: number;  // Keeping for backward compatibility
+  total_tokens: number; // New field from accurate counting
+  test_case_results: { [key: number]: TestCaseDetails };
+  scores_by_criteria: {  // Made required and updated structure
+    [criterion: string]: TestCaseResult[];  // Array of pass/fail results for each criterion
+  }
+}
+
+export interface PaginatedEvaluations {
+  evaluations: Evaluation[];
+  total_count: number;
+  page: number;
+  pages: number;
 }

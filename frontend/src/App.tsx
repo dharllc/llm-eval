@@ -4,7 +4,8 @@ import { Grid, Paper, Typography, Alert, Snackbar } from '@mui/material';
 import { AppLayout } from './components/AppLayout';
 import { SystemPromptInput } from './components/SystemPromptInput';
 import { EvaluationProgress } from './components/EvaluationProgress';
-import { TestCaseAnalysis, TestCaseResult, WebSocketMessage } from './types';
+import { PreviousEvaluations } from './components/PreviousEvaluations';
+import { TestCaseAnalysis, TestCaseResult, WebSocketMessage, Evaluation } from './types';
 
 const RECONNECT_INTERVAL = 3000;
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -28,6 +29,7 @@ function App() {
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const wsRef = useRef<WebSocket | null>(null);
   const [currentEvaluationId, setCurrentEvaluationId] = useState<number | undefined>();
+  const [selectedEvaluation, setSelectedEvaluation] = useState<Evaluation | null>(null);
 
   const setupWebSocket = useCallback((port: number) => {
     const socket = new WebSocket(`ws://localhost:${port}/ws`);
@@ -90,6 +92,7 @@ function App() {
           setActiveCriterion(undefined);
           setSnackbarMessage('Evaluation completed successfully');
           setSnackbarOpen(true);
+          setSelectedEvaluation(null); // Clear any selected evaluation
         } else if (data.stage === 'error') {
           setError(data.error || 'An unknown error occurred');
           setEvaluationStarted(false);
@@ -175,6 +178,7 @@ function App() {
     setProcessedTestCases(0);
     setActiveCriterion(undefined);
     setCurrentEvaluationId(undefined);
+    setSelectedEvaluation(null);
     processedIds.current.clear();
 
     try {
@@ -202,6 +206,40 @@ function App() {
 
   const handleSnackbarClose = () => setSnackbarOpen(false);
 
+  const handleEvaluationSelect = useCallback((evaluation: Evaluation) => {
+    setSelectedEvaluation(evaluation);
+    // Reset current evaluation state
+    setEvaluationStarted(false);
+    setEvaluationComplete(true);
+    
+    // Transform test_case_results into criteriaResults format
+    const formattedResults: { [criterion: string]: { [id: number]: TestCaseResult } } = {};
+    
+    // If we have test_case_results, use that to build the criteria results
+    if (evaluation.test_case_results) {
+      Object.values(evaluation.test_case_results).forEach(testCase => {
+        if (!formattedResults[testCase.criterion]) {
+          formattedResults[testCase.criterion] = {};
+        }
+        formattedResults[testCase.criterion][testCase.id] = testCase.result;
+      });
+    }
+    // If no test_case_results but have scores_by_criteria, use that as fallback
+    else if (evaluation.scores_by_criteria) {
+      Object.entries(evaluation.scores_by_criteria).forEach(([criterion, results]) => {
+        formattedResults[criterion] = {};
+        results.forEach((result, index) => {
+          formattedResults[criterion][index] = result;
+        });
+      });
+    }
+    
+    setCriteriaResults(formattedResults);
+    setTotalScore(evaluation.total_score);
+    setCurrentEvaluationId(evaluation.id);
+    setProcessedTestCases(evaluation.total_score); // Set processed cases to match total score
+  }, []);
+
   return (
     <AppLayout>
       <Grid container spacing={3}>
@@ -218,6 +256,7 @@ function App() {
             <SystemPromptInput 
               onSubmit={handleSystemPromptSubmit}
               disabled={evaluationStarted || !ws}
+              defaultValue={selectedEvaluation?.system_prompt}
             />
           </Paper>
         </Grid>
@@ -236,6 +275,10 @@ function App() {
           />
         </Grid>
       </Grid>
+      <PreviousEvaluations 
+        backendPort={backendPort}
+        onEvaluationSelect={handleEvaluationSelect}
+      />
       <Snackbar
         open={snackbarOpen}
         autoHideDuration={6000}
