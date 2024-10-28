@@ -52,7 +52,7 @@ app.add_middleware(
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-config_path = os.path.join(os.path.dirname(__file__), "config.json")
+config_path = os.path.join(os.path.dirname(__file__), "backend_config.json")
 with open(config_path, "r") as config_file:
     config = json.load(config_file)
 EVALUATION_MODEL = config.get("evaluation_model", "gpt-4o-mini")
