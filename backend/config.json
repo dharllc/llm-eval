@@ -1,9 +1,0 @@
-{
-  "evaluation_model": "gpt-4o-mini",
-  "scoring_model": "gpt-4o-mini",
-  "evaluation_settings": {
-    "temperature": 0.0,
-    "system_prompt": "You are an expert evaluator of language model outputs. Your task is to fairly and accurately assess the quality of responses based on given criteria.",
-    "evaluation_prompt_template": "Evaluate the following language model output based on the given input, criterion, and description.\nDetermine if the output meets the specified criterion.\n\nInput: {input}\nOutput: {output}\nCriterion: {criterion}\nDescription: {description}\n\nRespond with either \"pass\" or \"fail\" followed by a brief explanation (max 50 words)."
-  }
-}

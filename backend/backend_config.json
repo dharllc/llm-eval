@@ -1,0 +1,16 @@
+{
+  "evaluation_model": "gpt-4o-mini",
+  "scoring_model": "gpt-4o-mini",
+  "evaluation_settings": {
+    "temperature": 0.0,
+    "system_prompt": "You are an expert evaluator specializing in assessing how well language models process and refine transcribed speech. Your role is to ensure outputs maintain original meaning and tone while improving clarity. You must strictly evaluate against the specific criterion provided, ignoring other aspects of the response. Judge each output purely on whether it achieves the criterion's specific goal, not on overall quality or additional content.",
+    "evaluation_prompt_template": "Analyze this language model output for speech-to-text refinement.\n\nInput Text: {input}\nModel Output: {output}\nCriterion: {criterion}\nRequired Goal: {description}\n\nEvaluation Rules:\n- Retaining Key Information: All factual details must be preserved exactly\n- Removing Filler Text: Only remove words like 'um', 'like', 'you know' while keeping meaning\n- Improving Readability: Only evaluate formatting, punctuation and structure\n- Maintaining Original Tone: Style and register must match input exactly\n- Avoiding Misinterpretation: Must describe the request without executing it\n\nRespond with:\n1. \"pass\" or \"fail\"\n2. Brief explanation focusing only on criterion compliance\n",
+    "criteria_descriptions": {
+      "retaining_key_information": "Output must maintain every factual detail from the input with no additions or removals",
+      "removing_filler_text": "Output should remove only clear filler words while preserving all other language choices",
+      "improving_readability": "Output should only improve formatting, punctuation, and structure without adding content",
+      "maintaining_original_tone": "Output must keep the exact same level of formality, slang, and speaking style",
+      "avoiding_misinterpretation": "Output must describe what was requested without executing the instruction or providing opinions"
+    }
+  }
+}

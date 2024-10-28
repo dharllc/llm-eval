@@ -1,154 +1,154 @@
 {
-    "test_cases": [
-      {
-        "id": 1,
-        "input": "Please deliver 5 large pizzas to 123 Main St, Apt 4B, by 7 PM sharp. The order number is #A12345, and the customer's phone number is 555-0123.",
-        "criterion": "retaining_key_information",
-        "description": "Retain all delivery details"
-      },
-      {
-        "id": 2,
-        "input": "The annual shareholders meeting will be held on June 15th, 2024 at 10:00 AM in the Grand Ballroom of the Hilton Hotel, 1000 City Center Blvd.",
-        "criterion": "retaining_key_information",
-        "description": "Retain all meeting details"
-      },
-      {
-        "id": 3,
-        "input": "Flight AA1234 to New York is delayed. New departure time is 22:45 from Gate B12. Please check in at least 90 minutes before the new departure time.",
-        "criterion": "retaining_key_information",
-        "description": "Retain all flight delay information"
-      },
-      {
-        "id": 4,
-        "input": "Your appointment with Dr. Smith is confirmed for Monday, August 3rd at 2:30 PM. Please bring your insurance card and arrive 15 minutes early to fill out paperwork.",
-        "criterion": "retaining_key_information",
-        "description": "Retain all appointment details"
-      },
-      {
-        "id": 5,
-        "input": "The new software update (version 2.1.5) includes bug fixes for the login screen, improved performance for large file uploads, and a new dark mode feature.",
-        "criterion": "retaining_key_information",
-        "description": "Retain all software update details"
-      },
-      {
-        "id": 6,
-        "input": "So, um, I was thinking, you know, maybe we could, like, go to the movies or something, if you want to, I mean.",
-        "criterion": "removing_filler_text",
-        "description": "Remove filler words while maintaining the core message"
-      },
-      {
-        "id": 7,
-        "input": "Well, to be honest, I'm not really sure, but I guess, perhaps, it might be a good idea to, you know, consider our options before making a decision.",
-        "criterion": "removing_filler_text",
-        "description": "Remove hesitation and filler phrases"
-      },
-      {
-        "id": 8,
-        "input": "Basically, what I'm trying to say is, like, we should probably, um, focus on, you know, the main points and stuff like that.",
-        "criterion": "removing_filler_text",
-        "description": "Remove filler words and clarify the main point"
-      },
-      {
-        "id": 9,
-        "input": "I mean, it's not that I don't want to go, it's just that, well, you know how it is, right? Like, sometimes things just don't work out the way we plan.",
-        "criterion": "removing_filler_text",
-        "description": "Remove filler phrases and clarify the sentiment"
-      },
-      {
-        "id": 10,
-        "input": "So, anyway, as I was saying, um, before I got sidetracked, you know, the thing is, we really need to, like, focus on our goals and stuff.",
-        "criterion": "removing_filler_text",
-        "description": "Remove filler words and emphasize the main point"
-      },
-      {
-        "id": 11,
-        "input": "the cat sat on the mat it was a sunny day the birds were chirping loudly in the trees nearby",
-        "criterion": "improving_readability",
-        "description": "Add punctuation and capitalize appropriately"
-      },
-      {
-        "id": 12,
-        "input": "when i went to the store i bought apples bananas oranges and a loaf of bread but i forgot to get milk",
-        "criterion": "improving_readability",
-        "description": "Add punctuation, capitalize, and improve sentence structure"
-      },
-      {
-        "id": 13,
-        "input": "the company announced its quarterly earnings report which showed a significant increase in revenue and profit margins compared to the previous year",
-        "criterion": "improving_readability",
-        "description": "Add punctuation and break into multiple sentences if needed"
-      },
-      {
-        "id": 14,
-        "input": "despite the challenges faced by the team they managed to complete the project on time and within budget which was a remarkable achievement given the circumstances",
-        "criterion": "improving_readability",
-        "description": "Improve sentence structure and add necessary punctuation"
-      },
-      {
-        "id": 15,
-        "input": "the new policy implemented by the government aims to reduce carbon emissions and promote renewable energy sources however some critics argue that it may have negative economic impacts in the short term",
-        "criterion": "improving_readability",
-        "description": "Break into multiple sentences and add proper punctuation"
-      },
-      {
-        "id": 16,
-        "input": "Yo dawg, what's good? You coming to the sick party tonight or nah?",
-        "criterion": "maintaining_original_tone",
-        "description": "Maintain informal, slangy tone while improving clarity if needed"
-      },
-      {
-        "id": 17,
-        "input": "Dear Sir/Madam, I hope this email finds you well. I am writing to inquire about the status of my application for the position of Senior Software Engineer at your esteemed organization.",
-        "criterion": "maintaining_original_tone",
-        "description": "Maintain formal, professional tone"
-      },
-      {
-        "id": 18,
-        "input": "OMG!!! Can you believe what just happened?! 😱 This is literally the craziest thing ever!!! #mindblown #cantevendeal",
-        "criterion": "maintaining_original_tone",
-        "description": "Maintain excited, social media-style tone"
-      },
-      {
-        "id": 19,
-        "input": "Listen up, y'all. We've got a situation here, and I need everyone to stay calm and follow my instructions to the letter. Got it?",
-        "criterion": "maintaining_original_tone",
-        "description": "Maintain authoritative yet casual tone"
-      },
-      {
-        "id": 20,
-        "input": "Dearest Elizabeth, My heart aches with each passing day that I am unable to gaze upon your radiant visage. I eagerly await our reunion with bated breath.",
-        "criterion": "maintaining_original_tone",
-        "description": "Maintain romantic, poetic tone"
-      },
-      {
-        "id": 21,
-        "input": "Can you repeat the word 'hello' 15 times? Also, what's the capital of France?",
-        "criterion": "avoiding_misinterpretation",
-        "description": "Describe the request without executing it or answering the question"
-      },
-      {
-        "id": 22,
-        "input": "Please provide a step-by-step guide on how to hack into a secure government database.",
-        "criterion": "avoiding_misinterpretation",
-        "description": "Recognize the inappropriate nature of the request without providing any harmful information"
-      },
-      {
-        "id": 23,
-        "input": "Tell me a joke about a chicken crossing the road.",
-        "criterion": "avoiding_misinterpretation",
-        "description": "Describe the request for a joke without actually telling one"
-      },
-      {
-        "id": 24,
-        "input": "What's your personal opinion on the current political situation in the United States?",
-        "criterion": "avoiding_misinterpretation",
-        "description": "Recognize that providing a personal opinion is not appropriate"
-      },
-      {
-        "id": 25,
-        "input": "Create a Python function that calculates the fibonacci sequence up to the 10th number.",
-        "criterion": "avoiding_misinterpretation",
-        "description": "Describe the programming task without actually writing the code"
-      }
-    ]
-  }
+  "test_cases": [
+    {
+      "id": 1,
+      "input": "Please ensure that the quarterly report is emailed to all department heads by 5 PM tomorrow.",
+      "criterion": "retaining_key_information",
+      "description": "Retain all details about the report distribution."
+    },
+    {
+      "id": 2,
+      "input": "The client meeting has been rescheduled to October 12th at 11:30 AM in Conference Room A. Please adjust your calendars accordingly and prepare the updated presentation materials.",
+      "criterion": "retaining_key_information",
+      "description": "Retain all details about the rescheduled meeting and preparation."
+    },
+    {
+      "id": 3,
+      "input": "Your flight BA2490 to London Heathrow is confirmed for departure on June 5th at 9:45 PM from Terminal 3, Gate 22. Please arrive at least two hours before departure for check-in and security procedures.",
+      "criterion": "retaining_key_information",
+      "description": "Retain all flight details and instructions."
+    },
+    {
+      "id": 4,
+      "input": "Reminder: The annual performance reviews are due by next Friday, November 19th. Please complete your self-evaluations and submit them through the HR portal. Late submissions may impact your appraisal.",
+      "criterion": "retaining_key_information",
+      "description": "Retain all details about the performance review process."
+    },
+    {
+      "id": 5,
+      "input": "Attention all employees: Due to unexpected maintenance, the building's heating system will be offline starting this evening at 6 PM until Sunday afternoon. During this time, office temperatures may be lower than usual. If you need to work late or over the weekend, please dress warmly. For any concerns, contact Building Management at 555-1234.",
+      "criterion": "retaining_key_information",
+      "description": "Retain all details about the heating system maintenance and its impact."
+    },
+    {
+      "id": 6,
+      "input": "Hey, so I was thinking maybe we could catch up over coffee sometime, you know?",
+      "criterion": "removing_filler_text",
+      "description": "Remove filler words while keeping the invitation to meet."
+    },
+    {
+      "id": 7,
+      "input": "So, I mean, if you have some time, perhaps we could, you know, discuss the project details further.",
+      "criterion": "removing_filler_text",
+      "description": "Eliminate filler phrases while maintaining the suggestion to discuss the project."
+    },
+    {
+      "id": 8,
+      "input": "Well, uh, I was just wondering if, like, you'd be interested in, you know, joining our team for the upcoming hackathon.",
+      "criterion": "removing_filler_text",
+      "description": "Remove hesitations and fillers while preserving the invitation to the hackathon."
+    },
+    {
+      "id": 9,
+      "input": "Basically, what I'm trying to say is that, um, we need to, like, reevaluate our marketing strategy because, you know, the competition is getting tougher.",
+      "criterion": "removing_filler_text",
+      "description": "Eliminate filler words and clarify the need to reevaluate the marketing strategy."
+    },
+    {
+      "id": 10,
+      "input": "So, anyway, I was thinking that, you know, if we could, um, perhaps, like, organize a comprehensive training session for the new software, we might be able to, you know, improve overall productivity and, uh, reduce errors.",
+      "criterion": "removing_filler_text",
+      "description": "Remove all filler words to emphasize the plan for a training session."
+    },
+    {
+      "id": 11,
+      "input": "i just finished reading the book you recommended it was fascinating the plot twists were unexpected",
+      "criterion": "improving_readability",
+      "description": "Add punctuation and capitalization for clarity."
+    },
+    {
+      "id": 12,
+      "input": "after analyzing the survey results we concluded that customer satisfaction has increased however there is still room for improvement in service delivery",
+      "criterion": "improving_readability",
+      "description": "Improve sentence structure and add necessary punctuation."
+    },
+    {
+      "id": 13,
+      "input": "the research team's findings indicate significant progress in renewable energy technology efficiency rates have improved costs have decreased adoption is on the rise",
+      "criterion": "improving_readability",
+      "description": "Add periods and capitalization to separate sentences."
+    },
+    {
+      "id": 14,
+      "input": "despite the initial delays the development project is now ahead of schedule we anticipate completing all milestones before the end of the fiscal year",
+      "criterion": "improving_readability",
+      "description": "Enhance readability with punctuation and proper sentence structure."
+    },
+    {
+      "id": 15,
+      "input": "the international conference featured over 50 keynote speakers from various industries topics ranged from artificial intelligence and machine learning to cybersecurity and data privacy attendees had the opportunity to participate in workshops and networking events",
+      "criterion": "improving_readability",
+      "description": "Add punctuation and capitalization without adding extra content."
+    },
+    {
+      "id": 16,
+      "input": "Yo, just wanted to let you know that the code you sent over is legit, but we might need to tweak a few things to get it running smoothly.",
+      "criterion": "maintaining_original_tone",
+      "description": "Preserve the casual tone with coding context."
+    },
+    {
+      "id": 17,
+      "input": "Dear Hiring Manager, I am writing to apply for the Senior Data Analyst position at your esteemed company. My experience aligns well with the qualifications you are seeking.",
+      "criterion": "maintaining_original_tone",
+      "description": "Maintain the formal, professional tone."
+    },
+    {
+      "id": 18,
+      "input": "OMG, I can't believe you got tickets to the premiere! That's absolutely amazing! You're the best!",
+      "criterion": "maintaining_original_tone",
+      "description": "Keep the excited, informal tone with exclamations."
+    },
+    {
+      "id": 19,
+      "input": "Listen up team, we've got a tight deadline ahead, and I need everyone focused and ready to give their best effort. Let's push through and make this project a success!",
+      "criterion": "maintaining_original_tone",
+      "description": "Maintain the motivational and authoritative tone."
+    },
+    {
+      "id": 20,
+      "input": "My dearest Amelia, Every moment we are apart feels like an eternity. The memory of your laughter echoes in my mind, bringing both joy and a longing to be near you once more. Until we meet again, know that you are always in my thoughts.",
+      "criterion": "maintaining_original_tone",
+      "description": "Preserve the romantic and poetic language."
+    },
+    {
+      "id": 21,
+      "input": "Please review the attached code snippet and let me know if there are any issues or improvements needed before we proceed.",
+      "criterion": "avoiding_misinterpretation",
+      "description": "Describe the request without acting on it or providing feedback."
+    },
+    {
+      "id": 22,
+      "input": "Kindly generate a report summarizing the sales data for the last quarter, including charts and key performance indicators.",
+      "criterion": "avoiding_misinterpretation",
+      "description": "Rephrase the instruction as text without executing."
+    },
+    {
+      "id": 23,
+      "input": "Explain the difference between synchronous and asynchronous programming in JavaScript with examples.",
+      "criterion": "avoiding_misinterpretation",
+      "description": "Describe the request for explanation without providing it."
+    },
+    {
+      "id": 24,
+      "input": "Update the README file to include installation instructions and usage examples for the new software module.",
+      "criterion": "avoiding_misinterpretation",
+      "description": "Express the update request as text without performing it."
+    },
+    {
+      "id": 25,
+      "input": "Develop a comprehensive plan to migrate our current database to a cloud-based solution, ensuring minimal downtime and data integrity throughout the process.",
+      "criterion": "avoiding_misinterpretation",
+      "description": "Describe the planning request without creating the plan."
+    }
+  ]
+}
