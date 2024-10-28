@@ -379,6 +379,80 @@ def get_port():
 async def startup_event():
     await verify_database()
 
+@app.get("/evaluations")
+async def get_evaluations(page: int = 1, limit: int = 5):
+    async with get_async_session() as session:
+        try:
+            # Get total count
+            count_stmt = select(Evaluation).join(EvaluationType).where(EvaluationType.name == "speech_to_text")
+            result = await session.execute(count_stmt)
+            total_count = len(result.scalars().all())
+            
+            # Get paginated evaluations with results
+            offset = (page - 1) * limit
+            stmt = (
+                select(Evaluation)
+                .options(
+                    selectinload(Evaluation.results)
+                    .selectinload(EvaluationResult.test_case)
+                    .selectinload(TestCase.criterion)
+                )
+                .join(EvaluationType)
+                .where(EvaluationType.name == "speech_to_text")
+                .order_by(Evaluation.id.desc())
+                .offset(offset)
+                .limit(limit)
+            )
+            
+            result = await session.execute(stmt)
+            evaluations = result.scalars().all()
+            
+            # Process results
+            evaluation_data = []
+            for eval in evaluations:
+                # Calculate scores by criteria
+                scores_by_criteria = {}
+                for result in eval.results:
+                    criterion_name = result.test_case.criterion.name
+                    if criterion_name not in scores_by_criteria:
+                        scores_by_criteria[criterion_name] = {
+                            "pass_count": 0,
+                            "total_count": 0
+                        }
+                    scores_by_criteria[criterion_name]["total_count"] += 1
+                    if result.result == "pass":
+                        scores_by_criteria[criterion_name]["pass_count"] += 1
+                
+                # Calculate total score
+                total_score = sum(
+                    criteria["pass_count"] 
+                    for criteria in scores_by_criteria.values()
+                )
+                
+                # Approximate token count - this is a rough estimate
+                token_count = len(eval.system_prompt.split()) * 1.3
+                
+                evaluation_data.append({
+                    "id": eval.id,
+                    "timestamp": eval.timestamp.isoformat(),
+                    "system_prompt": eval.system_prompt,
+                    "model_name": eval.model_name,
+                    "total_score": total_score,
+                    "token_count": int(token_count),
+                    "scores_by_criteria": scores_by_criteria
+                })
+            
+            return {
+                "evaluations": evaluation_data,
+                "total_count": total_count,
+                "page": page,
+                "pages": (total_count + limit - 1) // limit
+            }
+            
+        except Exception as e:
+            logger.error(f"Error fetching evaluations: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
     port = get_port()

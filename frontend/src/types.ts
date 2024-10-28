@@ -43,3 +43,24 @@ export interface EvaluationSettings {
   evaluation_prompt_template: string;
   scoring_model?: string;
 }
+
+export interface Evaluation {
+  id: number;
+  timestamp: string;
+  system_prompt: string;
+  model_name: string;
+  total_score: number;
+  token_count: number;
+  scores_by_criteria: {
+    [criterion: string]: {
+      pass_count: number;
+      total_count: number;
+    }
+  }
+}
+
+export interface PaginatedEvaluations {
+  evaluations: Evaluation[];
+  total_pages: number;
+  current_page: number;
+}
