@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import ForeignKey, String, Text, CheckConstraint, select, event
+from sqlalchemy import ForeignKey, String, Text, text, CheckConstraint, select, event
 from datetime import datetime
 import os
 from typing import List, AsyncGenerator
@@ -11,6 +11,94 @@ import logging
 from contextlib import asynccontextmanager
 
 logger = logging.getLogger(__name__)
+
+# START MIGATION SCRIPT
+async def migrate_database():
+    """Recreate tables with new schema while preserving data"""
+    logger.info("Starting database migration")
+    
+    async with engine.begin() as conn:
+        try:
+            # First backup existing data
+            eval_data = await conn.execute(text("SELECT * FROM evaluations"))
+            evaluations = eval_data.fetchall()
+            
+            result_data = await conn.execute(text("SELECT * FROM evaluation_results"))
+            eval_results = result_data.fetchall()
+            
+            # Drop existing tables
+            await conn.execute(text("DROP TABLE IF EXISTS evaluation_results"))
+            await conn.execute(text("DROP TABLE IF EXISTS evaluations"))
+            
+            # Create new tables with updated schema
+            await conn.execute(text("""
+                CREATE TABLE evaluations (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    evaluation_type_id INTEGER NOT NULL,
+                    timestamp DATETIME NOT NULL,
+                    system_prompt TEXT NOT NULL,
+                    model_name VARCHAR NOT NULL,
+                    total_tokens INTEGER NOT NULL DEFAULT 0,
+                    FOREIGN KEY(evaluation_type_id) REFERENCES evaluation_types (id)
+                )
+            """))
+            
+            await conn.execute(text("""
+                CREATE TABLE evaluation_results (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    evaluation_id INTEGER NOT NULL,
+                    test_case_id INTEGER NOT NULL,
+                    output TEXT NOT NULL,
+                    result VARCHAR NOT NULL,
+                    explanation TEXT,
+                    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+                    response_tokens INTEGER NOT NULL DEFAULT 0,
+                    FOREIGN KEY(evaluation_id) REFERENCES evaluations (id),
+                    FOREIGN KEY(test_case_id) REFERENCES test_cases (id),
+                    CONSTRAINT valid_result CHECK (result IN ('pass', 'fail'))
+                )
+            """))
+            
+            # Restore evaluations data
+            for eval in evaluations:
+                await conn.execute(
+                    text("""
+                        INSERT INTO evaluations (id, evaluation_type_id, timestamp, system_prompt, model_name)
+                        VALUES (:id, :type_id, :timestamp, :prompt, :model)
+                    """),
+                    {
+                        "id": eval[0],
+                        "type_id": eval[1],
+                        "timestamp": eval[2],
+                        "prompt": eval[3],
+                        "model": eval[4]
+                    }
+                )
+            
+            # Restore evaluation results data
+            for result in eval_results:
+                await conn.execute(
+                    text("""
+                        INSERT INTO evaluation_results (id, evaluation_id, test_case_id, output, result, explanation)
+                        VALUES (:id, :eval_id, :case_id, :output, :result, :explanation)
+                    """),
+                    {
+                        "id": result[0],
+                        "eval_id": result[1],
+                        "case_id": result[2],
+                        "output": result[3],
+                        "result": result[4],
+                        "explanation": result[5]
+                    }
+                )
+            
+            logger.info("Database migration completed successfully")
+            
+        except Exception as e:
+            logger.error(f"Migration failed: {e}")
+            raise DatabaseConnectionError(f"Migration failed: {str(e)}") from e
+# END MIGRATION SCRIPT
+
 
 DATABASE_URL = f"sqlite+aiosqlite:///{os.path.join(os.path.dirname(__file__), '..', 'data', 'llm_eval.db')}"
 
@@ -60,6 +148,7 @@ class Evaluation(Base):
     timestamp: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     system_prompt: Mapped[str] = mapped_column(Text)
     model_name: Mapped[str] = mapped_column(String)
+    total_tokens: Mapped[int] = mapped_column(default=0)  # Added field
     evaluation_type: Mapped[EvaluationType] = relationship(back_populates="evaluations")
     results: Mapped[List["EvaluationResult"]] = relationship(back_populates="evaluation", cascade="all, delete-orphan")
 
@@ -71,6 +160,8 @@ class EvaluationResult(Base):
     output: Mapped[str] = mapped_column(Text)
     result: Mapped[str] = mapped_column(String)
     explanation: Mapped[str] = mapped_column(Text, nullable=True)
+    prompt_tokens: Mapped[int] = mapped_column(default=0)  # Added field
+    response_tokens: Mapped[int] = mapped_column(default=0)  # Added field
     evaluation: Mapped[Evaluation] = relationship(back_populates="results")
     test_case: Mapped[TestCase] = relationship(back_populates="evaluation_results")
     __table_args__ = (CheckConstraint("result IN ('pass', 'fail')", name="valid_result"),)
@@ -151,6 +242,8 @@ async def init_speech_to_text_eval():
 async def verify_database():
     logger.info("Verifying database")
     db_path = Path(DATABASE_URL.replace('sqlite+aiosqlite:///', ''))
+    needs_migration = False
+
     if not db_path.exists():
         logger.info("Database file not found, creating new database")
         await init_db()
@@ -159,8 +252,14 @@ async def verify_database():
     else:
         logger.info("Existing database found, creating backup")
         await backup_database()
+        needs_migration = True  # Existing database needs migration
         
     try:
+        if needs_migration:
+            logger.info("Starting database migration...")
+            await migrate_database()
+            logger.info("Database migration completed")
+        
         async with async_session_maker() as session:
             result = await session.execute(select(EvaluationType))
             if not result.scalars().first():

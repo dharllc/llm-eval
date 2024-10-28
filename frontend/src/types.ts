@@ -14,6 +14,9 @@ export interface TestCaseDetails {
   output: string;
   result: TestCaseResult;
   explanation: string;
+  criterion: string;
+  prompt_tokens?: number;
+  response_tokens?: number;
 }
 
 export interface WebSocketMessage {
@@ -50,8 +53,10 @@ export interface Evaluation {
   system_prompt: string;
   model_name: string;
   total_score: number;
-  token_count: number;
-  scores_by_criteria: {
+  token_count: number;  // Keeping for backward compatibility
+  total_tokens: number; // New field from accurate counting
+  test_case_results: { [key: number]: TestCaseDetails };
+  scores_by_criteria?: {  // Made optional since we're transitioning away from it
     [criterion: string]: {
       pass_count: number;
       total_count: number;
@@ -61,6 +66,7 @@ export interface Evaluation {
 
 export interface PaginatedEvaluations {
   evaluations: Evaluation[];
-  total_pages: number;
-  current_page: number;
+  total_count: number;
+  page: number;
+  pages: number;
 }

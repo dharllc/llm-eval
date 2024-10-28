@@ -11,6 +11,7 @@ interface CriteriaResultsProps {
   evaluationStarted: boolean;
   activeCriterion?: string;
   evaluationId?: number;
+  detailedResults?: { [key: number]: TestCaseDetailsType };
 }
 
 export const CriteriaResults: React.FC<CriteriaResultsProps> = ({
@@ -19,7 +20,8 @@ export const CriteriaResults: React.FC<CriteriaResultsProps> = ({
   countsPerCriterion,
   evaluationStarted,
   activeCriterion,
-  evaluationId
+  evaluationId,
+  detailedResults
 }) => {
   const [hoveredCase, setHoveredCase] = useState<{ id: number, criterion: string } | null>(null);
   const [selectedCase, setSelectedCase] = useState<{ id: number, criterion: string } | null>(null);
@@ -38,6 +40,13 @@ export const CriteriaResults: React.FC<CriteriaResultsProps> = ({
     setHoveredCase({ id, criterion });
     setAnchorEl(event.currentTarget);
     
+    // First check if we have the details in detailedResults
+    if (detailedResults && detailedResults[id]) {
+      setTestCaseDetails(detailedResults[id]);
+      return;
+    }
+    
+    // Fall back to fetching if not in detailedResults
     if (!testCaseDetails || testCaseDetails.id !== id) {
       setIsLoading(true);
       try {
@@ -69,6 +78,14 @@ export const CriteriaResults: React.FC<CriteriaResultsProps> = ({
     }
 
     setSelectedCase({ id, criterion });
+    
+    // First check if we have the details in detailedResults
+    if (detailedResults && detailedResults[id]) {
+      setTestCaseDetails(detailedResults[id]);
+      return;
+    }
+    
+    // Fall back to fetching if not in detailedResults
     setIsLoading(true);
     
     try {
