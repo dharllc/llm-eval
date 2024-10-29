@@ -249,21 +249,40 @@ async def evaluate_output(input_text: str, output_text: str, criterion: str, des
                     {"role": "system", "content": settings["system_prompt"]},
                     {"role": "user", "content": evaluation_prompt}
                 ],
+                functions=[{
+                    "name": "submit_evaluation",
+                    "description": "Submit evaluation result",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "passed": {
+                                "type": "boolean",
+                                "description": "Whether the output meets the criterion requirements"
+                            },
+                            "explanation": {
+                                "type": "string",
+                                "description": "Brief explanation of why the output passed or failed"
+                            }
+                        },
+                        "required": ["passed", "explanation"]
+                    }
+                }],
+                function_call={"name": "submit_evaluation"},
                 max_tokens=1000,
                 temperature=settings["temperature"]
             )
             
-            evaluation = response.choices[0].message.content.strip()
-            pass_fail = "pass" if evaluation.lower().startswith("pass") else "fail"
-            explanation = evaluation.replace("pass", "", 1).replace("fail", "", 1).strip()
-            return {"result": pass_fail, "explanation": explanation}
-            
+            result = json.loads(response.choices[0].message.function_call.arguments)
+            return {
+                "result": "pass" if result["passed"] else "fail",
+                "explanation": result["explanation"]
+            }
+                
         except Exception as e:
             logger.error(f"Error in evaluation: {str(e)}")
             if _ == 2:
                 return {"result": "error", "explanation": str(e)}
             await asyncio.sleep(1)
-
 @app.post("/evaluate")
 async def evaluate(system_prompt: SystemPrompt):
     logger.info(f"Starting evaluation with prompt: {system_prompt.prompt}")
