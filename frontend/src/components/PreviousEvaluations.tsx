@@ -15,7 +15,6 @@ import {
   Alert
 } from '@mui/material';
 import { Evaluation, WebSocketMessage } from '../types';
-import { TrendChart } from './TrendChart';
 
 interface PreviousEvaluationsProps {
   backendPort?: number | null;
@@ -27,19 +26,14 @@ export const PreviousEvaluations: React.FC<PreviousEvaluationsProps> = ({
   onEvaluationSelect 
 }) => {
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(5);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<{
     evaluations: Evaluation[];
     total_count: number;
-    page: number;
-    pages: number;
   }>({
     evaluations: [],
-    total_count: 0,
-    page: 1,
-    pages: 0
+    total_count: 0
   });
   const [allEvaluations, setAllEvaluations] = useState<Evaluation[]>([]);
   const [ws, setWs] = useState<WebSocket | null>(null);
@@ -61,24 +55,10 @@ export const PreviousEvaluations: React.FC<PreviousEvaluationsProps> = ({
       const result = await response.json();
       const sortedEvals = [...result.evaluations].sort((a, b) => b.id - a.id);
       setAllEvaluations(sortedEvals);
-      setData(prev => ({
-        ...prev,
+      setData({
+        evaluations: sortedEvals.slice(0, 20),
         total_count: result.total_count
-      }));
-
-      // Initialize to show the latest 20 evaluations
-      if (sortedEvals.length > 20) {
-        const startIdx = Math.max(0, sortedEvals.length - 20);
-        setData(prev => ({
-          ...prev,
-          evaluations: sortedEvals.slice(startIdx, startIdx + 20)
-        }));
-      } else {
-        setData(prev => ({
-          ...prev,
-          evaluations: sortedEvals
-        }));
-      }
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch evaluations');
     } finally {
@@ -132,9 +112,7 @@ export const PreviousEvaluations: React.FC<PreviousEvaluationsProps> = ({
     setPage(newPage);
   };
 
-  const totalPages = Math.ceil(allEvaluations.length / 20);
-
-  if (loading && !data.evaluations.length) {
+  if (loading) {
     return (
       <Paper elevation={3} sx={{ p: 3, mt: 3, display: 'flex', justifyContent: 'center' }}>
         <CircularProgress />
@@ -151,6 +129,8 @@ export const PreviousEvaluations: React.FC<PreviousEvaluationsProps> = ({
       </Paper>
     );
   }
+
+  const totalPages = Math.ceil(allEvaluations.length / 20);
 
   return (
     <Paper elevation={3} sx={{ p: 3, mt: 3 }}>

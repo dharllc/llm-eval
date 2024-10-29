@@ -5,10 +5,9 @@ import { SystemPromptInput } from './components/SystemPromptInput';
 import { EvaluationProgress } from './components/EvaluationProgress';
 import { PreviousEvaluations } from './components/PreviousEvaluations';
 import { TrendChart } from './components/TrendChart';
-import { TestCaseAnalysis, TestCaseResult, WebSocketMessage, Evaluation } from './types';
+import { TestCaseAnalysis, TestCaseResult, WebSocketMessage, Evaluation, TestCaseDetails } from './types';
 
 function App() {
-  // Core state
   const [evaluationStarted, setEvaluationStarted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [backendPort, setBackendPort] = useState<number | null>(null);
@@ -18,8 +17,6 @@ function App() {
   const [scoringModel, setScoringModel] = useState('');
   const reconnectAttempts = useRef(0);
   const processedIds = useRef(new Set<number>());
-
-  // Evaluation state
   const [criteriaResults, setCriteriaResults] = useState<{[criterion: string]: {[id: number]: TestCaseResult}}>({});
   const [totalScore, setTotalScore] = useState(0);
   const [evaluationComplete, setEvaluationComplete] = useState(false);
@@ -28,11 +25,10 @@ function App() {
   const [testCaseAnalysis, setTestCaseAnalysis] = useState<TestCaseAnalysis | null>(null);
   const [currentEvaluationId, setCurrentEvaluationId] = useState<number>();
   const [selectedEvaluation, setSelectedEvaluation] = useState<Evaluation | null>(null);
-
-  // Chart state
   const [allEvaluations, setAllEvaluations] = useState<Evaluation[]>([]);
   const [currentOffset, setCurrentOffset] = useState(0);
   const [snackbarState, setSnackbarState] = useState({ open: false, message: '', isError: false });
+  const [detailedResults, setDetailedResults] = useState<{[key: number]: TestCaseDetails}>({});
 
   const fetchAllEvaluations = useCallback(async () => {
     if (!backendPort) return;
@@ -47,6 +43,25 @@ function App() {
       console.error('Failed to fetch evaluations:', err);
     }
   }, [backendPort]);
+
+  const handleEvaluationSelect = useCallback((evaluation: Evaluation) => {
+    setSelectedEvaluation(evaluation);
+    if (evaluation.test_case_results) {
+      setCriteriaResults({});
+      const results: {[criterion: string]: {[id: number]: TestCaseResult}} = {};
+      Object.entries(evaluation.test_case_results).forEach(([id, details]) => {
+        const criterion = details.criterion;
+        if (!results[criterion]) results[criterion] = {};
+        results[criterion][parseInt(id)] = details.result as TestCaseResult;
+      });
+      setCriteriaResults(results);
+      setDetailedResults(evaluation.test_case_results);
+      setTotalScore(evaluation.total_score);
+      setProcessedTestCases(Object.keys(evaluation.test_case_results).length);
+      setEvaluationComplete(true);
+      setCurrentEvaluationId(evaluation.id);
+    }
+  }, []);
 
   const setupWebSocket = useCallback((port: number) => {
     const socket = new WebSocket(`ws://localhost:${port}/ws`);
@@ -130,6 +145,7 @@ function App() {
     setActiveCriterion(undefined);
     setCurrentEvaluationId(undefined);
     setSelectedEvaluation(null);
+    setDetailedResults({});
     processedIds.current.clear();
 
     try {
@@ -178,16 +194,24 @@ function App() {
           />
         </Grid>
         <Grid item xs={12} md={6}>
-          <EvaluationProgress {...{
-            evaluationStarted, evaluationComplete, processedTestCases,
-            totalScore, testCaseAnalysis, criteriaResults, error,
-            activeCriterion, scoringModel, evaluationId: currentEvaluationId
-          }}/>
+          <EvaluationProgress 
+            evaluationStarted={evaluationStarted}
+            evaluationComplete={evaluationComplete}
+            processedTestCases={processedTestCases}
+            totalScore={totalScore}
+            testCaseAnalysis={testCaseAnalysis}
+            criteriaResults={criteriaResults}
+            error={error}
+            activeCriterion={activeCriterion}
+            scoringModel={scoringModel}
+            evaluationId={currentEvaluationId}
+            detailedResults={detailedResults}
+          />
         </Grid>
       </Grid>
       <PreviousEvaluations 
         backendPort={backendPort}
-        onEvaluationSelect={setSelectedEvaluation}
+        onEvaluationSelect={handleEvaluationSelect}
       />
       <Snackbar
         open={snackbarState.open}
