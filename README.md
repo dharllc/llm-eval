@@ -1,5 +1,5 @@
 # LLM Evaluation Tool
-![Screenshot 2024-10-28 at 10 43 24 AM](https://github.com/user-attachments/assets/75f44be4-8764-4dd4-be53-df01abdd0dce)
+![Screenshot 2024-10-28 at 10 07 15 PM](https://github.com/user-attachments/assets/740fca79-37e2-46d0-928e-6426549cf181)
 
 ## Problem Statement
 Language models often struggle with accurately processing raw transcribed text from speech-to-text inputs. Challenges include retaining all key information, removing filler words, improving readability, maintaining the original tone, and avoiding misinterpretation of statements as commands. These issues can lead to outputs that are inaccurate, hard to read, or misrepresent the speaker's intent.
