@@ -130,8 +130,6 @@ export const PreviousEvaluations: React.FC<PreviousEvaluationsProps> = ({
     );
   }
 
-  const totalPages = Math.ceil(allEvaluations.length / 20);
-
   return (
     <Paper elevation={3} sx={{ p: 3, mt: 3 }}>
       <Typography variant="h6" gutterBottom>
@@ -145,7 +143,9 @@ export const PreviousEvaluations: React.FC<PreviousEvaluationsProps> = ({
               <TableCell>Date</TableCell>
               <TableCell align="right">Score</TableCell>
               <TableCell align="right">Tokens</TableCell>
-              <TableCell>Model</TableCell>
+              <TableCell align="right">Cost ($)</TableCell>
+              <TableCell>Evaluation Model</TableCell>
+              <TableCell>Scoring Model</TableCell>
               <TableCell>System Prompt</TableCell>
             </TableRow>
           </TableHead>
@@ -165,12 +165,26 @@ export const PreviousEvaluations: React.FC<PreviousEvaluationsProps> = ({
                 <TableCell>{evaluation.id}</TableCell>
                 <TableCell>{new Date(evaluation.timestamp).toLocaleString()}</TableCell>
                 <TableCell align="right">{evaluation.total_score}/25</TableCell>
+                <TableCell align="right">{evaluation.total_tokens}</TableCell>
                 <TableCell align="right">
-                  {evaluation.total_tokens !== undefined ? evaluation.total_tokens : 
-                   evaluation.token_count !== undefined ? evaluation.token_count : 
-                   0}
+                  {evaluation.total_cost.toFixed(6)}
                 </TableCell>
-                <TableCell>{evaluation.model_name}</TableCell>
+                <TableCell>
+                  <Tooltip title={evaluation.model_name}>
+                    <Typography variant="body2" sx={{ maxWidth: 150, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {evaluation.model_name}
+                      {evaluation.model_name === 'gpt-4o-mini-2024-07-18' && ' (default)'}
+                    </Typography>
+                  </Tooltip>
+                </TableCell>
+                <TableCell>
+                  <Tooltip title={evaluation.scoring_model}>
+                    <Typography variant="body2" sx={{ maxWidth: 150, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {evaluation.scoring_model}
+                      {evaluation.scoring_model === 'gpt-4o-mini-2024-07-18' && ' (default)'}
+                    </Typography>
+                  </Tooltip>
+                </TableCell>
                 <TableCell sx={{ maxWidth: 300 }}>
                   <Tooltip title={evaluation.system_prompt}>
                     <Typography

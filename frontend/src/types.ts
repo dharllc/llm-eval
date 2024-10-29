@@ -19,6 +19,8 @@ export interface TestCaseDetails {
   response_tokens?: number;
   input_model?: string;
   output_model?: string;
+  evaluation_cost?: number;
+  scoring_cost?: number;
 }
 
 export interface WebSocketMessage {
@@ -36,6 +38,7 @@ export interface WebSocketMessage {
     criterion: string;
     result: TestCaseResult;
     evaluation_id?: number;
+    cost?: number;
   };
   error?: string;
   status?: string;
@@ -49,18 +52,46 @@ export interface EvaluationSettings {
   scoring_model?: string;
 }
 
+export interface ModelCosts {
+  input: number;
+  output: number;
+}
+
+export interface ModelProvider {
+  [model: string]: ModelCosts;
+}
+
+export interface ModelConfig {
+  models: {
+    [provider: string]: ModelProvider;
+  };
+  current: {
+    evaluation_model: string;
+    scoring_model: string;
+  };
+  default: {
+    evaluation_model: string;
+    scoring_model: string;
+  };
+}
+
 export interface Evaluation {
   id: number;
   timestamp: string;
   system_prompt: string;
   model_name: string;
+  scoring_model: string;
   total_score: number;
-  token_count: number;  
-  total_tokens: number; 
+  total_tokens: number;
+  total_cost: number;
   test_case_results: { [key: number]: TestCaseDetails };
-  scores_by_criteria: {  
-    [criterion: string]: TestCaseResult[];  
-  }
+  scores_by_criteria: {
+    [criterion: string]: {
+      pass_count: number;
+      total_count: number;
+      cost: number;
+    };
+  };
 }
 
 export interface PaginatedEvaluations {

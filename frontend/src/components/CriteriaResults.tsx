@@ -8,6 +8,7 @@ interface CriteriaResultsProps {
   criteriaResults: { [criterion: string]: { [id: number]: TestCaseResult } };
   countsPerCriterion: { [key: string]: number };
   evaluationStarted: boolean;
+  evaluationComplete: boolean;  // Added this prop
   activeCriterion?: string;
   evaluationId?: number;
   detailedResults?: { [key: number]: TestCaseDetailsType };
@@ -18,6 +19,7 @@ export const CriteriaResults: React.FC<CriteriaResultsProps> = ({
   criteriaResults,
   countsPerCriterion,
   evaluationStarted,
+  evaluationComplete,  // Added this prop
   activeCriterion,
   evaluationId,
   detailedResults
@@ -171,6 +173,13 @@ export const CriteriaResults: React.FC<CriteriaResultsProps> = ({
     return Object.values(results || {}).filter(result => result === 'pass').length;
   };
 
+  const getCriterionCost = (criterion: string) => {
+    if (!detailedResults) return 0;
+    return Object.values(detailedResults)
+      .filter(detail => detail.criterion === criterion)
+      .reduce((sum, detail) => sum + (detail.evaluation_cost || 0) + (detail.scoring_cost || 0), 0);
+  };
+
   return (
     <Box sx={{ mt: 3, position: 'relative' }}>
       <Typography variant="h6" gutterBottom>Evaluation Criteria</Typography>
@@ -183,13 +192,20 @@ export const CriteriaResults: React.FC<CriteriaResultsProps> = ({
           boxShadow: 1,
           transition: 'background-color 0.3s ease'
         }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
             <Typography variant="body1" sx={{ fontWeight: criterion === activeCriterion ? 600 : 500 }}>
               {index + 1}. {displayName}
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Pass: {getPassCountForCriterion(criterion)}/{countsPerCriterion[criterion] || 5}
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Typography variant="body2" color="text.secondary">
+                Pass: {getPassCountForCriterion(criterion)}/{countsPerCriterion[criterion] || 5}
+              </Typography>
+              {evaluationComplete && (
+                <Typography variant="body2" color="text.secondary">
+                  Cost: ${getCriterionCost(criterion).toFixed(6)}
+                </Typography>
+              )}
+            </Box>
           </Box>
           {renderProgressBar(criterion)}
         </Box>
@@ -227,7 +243,13 @@ export const CriteriaResults: React.FC<CriteriaResultsProps> = ({
                  '⋯ In Progress'}
               </Typography>
               {testCaseDetails.explanation && (
-                <Typography variant="body2">{testCaseDetails.explanation}</Typography>
+                <Typography variant="body2" gutterBottom>{testCaseDetails.explanation}</Typography>
+              )}
+              {testCaseDetails.evaluation_cost !== undefined && testCaseDetails.scoring_cost !== undefined && (
+                <Typography variant="body2" color="text.secondary">
+                  Eval Cost: ${testCaseDetails.evaluation_cost.toFixed(6)}<br/>
+                  Scoring Cost: ${testCaseDetails.scoring_cost.toFixed(6)}
+                </Typography>
               )}
               {testCaseDetails.input && (
                 <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>

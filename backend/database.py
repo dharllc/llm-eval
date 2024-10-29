@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import ForeignKey, String, Text, text, CheckConstraint, select, event
+from sqlalchemy import ForeignKey, String, Text, text, CheckConstraint, select, event, Float
 from datetime import datetime
 import os
 from typing import List, AsyncGenerator
@@ -38,7 +38,9 @@ async def migrate_database():
                     timestamp DATETIME NOT NULL,
                     system_prompt TEXT NOT NULL,
                     model_name VARCHAR NOT NULL,
+                    scoring_model VARCHAR NOT NULL,
                     total_tokens INTEGER NOT NULL DEFAULT 0,
+                    total_cost FLOAT NOT NULL DEFAULT 0.0,
                     FOREIGN KEY(evaluation_type_id) REFERENCES evaluation_types (id)
                 )
             """))
@@ -53,34 +55,43 @@ async def migrate_database():
                     explanation TEXT,
                     prompt_tokens INTEGER NOT NULL DEFAULT 0,
                     response_tokens INTEGER NOT NULL DEFAULT 0,
+                    evaluation_cost FLOAT NOT NULL DEFAULT 0.0,
+                    scoring_cost FLOAT NOT NULL DEFAULT 0.0,
                     FOREIGN KEY(evaluation_id) REFERENCES evaluations (id),
                     FOREIGN KEY(test_case_id) REFERENCES test_cases (id),
                     CONSTRAINT valid_result CHECK (result IN ('pass', 'fail'))
                 )
             """))
             
-            # Restore evaluations data
+            # Restore evaluations data with default values for new fields
             for eval in evaluations:
                 await conn.execute(
                     text("""
-                        INSERT INTO evaluations (id, evaluation_type_id, timestamp, system_prompt, model_name)
-                        VALUES (:id, :type_id, :timestamp, :prompt, :model)
+                        INSERT INTO evaluations 
+                        (id, evaluation_type_id, timestamp, system_prompt, model_name, scoring_model, total_tokens, total_cost)
+                        VALUES (:id, :type_id, :timestamp, :prompt, :model, :scoring_model, :tokens, :cost)
                     """),
                     {
                         "id": eval[0],
                         "type_id": eval[1],
                         "timestamp": eval[2],
                         "prompt": eval[3],
-                        "model": eval[4]
+                        "model": eval[4],
+                        "scoring_model": "gpt-4o-mini",  # Default value for existing records
+                        "tokens": eval[5] if len(eval) > 5 else 0,
+                        "cost": 0.0
                     }
                 )
             
-            # Restore evaluation results data
+            # Restore evaluation results data with default values for new fields
             for result in eval_results:
                 await conn.execute(
                     text("""
-                        INSERT INTO evaluation_results (id, evaluation_id, test_case_id, output, result, explanation)
-                        VALUES (:id, :eval_id, :case_id, :output, :result, :explanation)
+                        INSERT INTO evaluation_results 
+                        (id, evaluation_id, test_case_id, output, result, explanation, 
+                         prompt_tokens, response_tokens, evaluation_cost, scoring_cost)
+                        VALUES (:id, :eval_id, :case_id, :output, :result, :explanation,
+                                :prompt_tokens, :response_tokens, :eval_cost, :score_cost)
                     """),
                     {
                         "id": result[0],
@@ -88,7 +99,11 @@ async def migrate_database():
                         "case_id": result[2],
                         "output": result[3],
                         "result": result[4],
-                        "explanation": result[5]
+                        "explanation": result[5],
+                        "prompt_tokens": result[6] if len(result) > 6 else 0,
+                        "response_tokens": result[7] if len(result) > 7 else 0,
+                        "eval_cost": 0.0,
+                        "score_cost": 0.0
                     }
                 )
             
@@ -98,7 +113,6 @@ async def migrate_database():
             logger.error(f"Migration failed: {e}")
             raise DatabaseConnectionError(f"Migration failed: {str(e)}") from e
 # END MIGRATION SCRIPT
-
 
 DATABASE_URL = f"sqlite+aiosqlite:///{os.path.join(os.path.dirname(__file__), '..', 'data', 'llm_eval.db')}"
 
@@ -148,7 +162,9 @@ class Evaluation(Base):
     timestamp: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     system_prompt: Mapped[str] = mapped_column(Text)
     model_name: Mapped[str] = mapped_column(String)
-    total_tokens: Mapped[int] = mapped_column(default=0)  # Added field
+    scoring_model: Mapped[str] = mapped_column(String)
+    total_tokens: Mapped[int] = mapped_column(default=0)
+    total_cost: Mapped[float] = mapped_column(Float, default=0.0)
     evaluation_type: Mapped[EvaluationType] = relationship(back_populates="evaluations")
     results: Mapped[List["EvaluationResult"]] = relationship(back_populates="evaluation", cascade="all, delete-orphan")
 
@@ -160,8 +176,10 @@ class EvaluationResult(Base):
     output: Mapped[str] = mapped_column(Text)
     result: Mapped[str] = mapped_column(String)
     explanation: Mapped[str] = mapped_column(Text, nullable=True)
-    prompt_tokens: Mapped[int] = mapped_column(default=0)  # Added field
-    response_tokens: Mapped[int] = mapped_column(default=0)  # Added field
+    prompt_tokens: Mapped[int] = mapped_column(default=0)
+    response_tokens: Mapped[int] = mapped_column(default=0)
+    evaluation_cost: Mapped[float] = mapped_column(Float, default=0.0)
+    scoring_cost: Mapped[float] = mapped_column(Float, default=0.0)
     evaluation: Mapped[Evaluation] = relationship(back_populates="results")
     test_case: Mapped[TestCase] = relationship(back_populates="evaluation_results")
     __table_args__ = (CheckConstraint("result IN ('pass', 'fail')", name="valid_result"),)
@@ -252,7 +270,7 @@ async def verify_database():
     else:
         logger.info("Existing database found, creating backup")
         await backup_database()
-        needs_migration = True  # Existing database needs migration
+        needs_migration = True
         
     try:
         if needs_migration:
