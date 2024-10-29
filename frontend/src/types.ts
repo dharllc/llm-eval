@@ -17,6 +17,8 @@ export interface TestCaseDetails {
   criterion: string;
   prompt_tokens?: number;
   response_tokens?: number;
+  input_model?: string;
+  output_model?: string;
 }
 
 export interface WebSocketMessage {

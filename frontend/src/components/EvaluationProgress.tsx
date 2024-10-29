@@ -1,4 +1,3 @@
-// frontend/src/components/EvaluationProgress.tsx
 import React, { useState, useEffect } from 'react';
 import { Paper, Typography, Box, LinearProgress, Alert, CircularProgress, IconButton } from '@mui/material';
 import { Settings2 } from 'lucide-react';
