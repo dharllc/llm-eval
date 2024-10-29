@@ -166,9 +166,10 @@ async def get_test_case_details(evaluation_id: int, test_case_id: int):
             if not test_case:
                 raise HTTPException(status_code=404, detail="Test case not found")
             
-            # Then try to get the evaluation result if it exists
+            # Get the evaluation and result with a single query
             stmt = (
                 select(EvaluationResult)
+                .options(selectinload(EvaluationResult.evaluation))
                 .where(
                     EvaluationResult.evaluation_id == evaluation_id,
                     EvaluationResult.test_case_id == test_case_id
@@ -177,14 +178,22 @@ async def get_test_case_details(evaluation_id: int, test_case_id: int):
             result = await session.execute(stmt)
             eval_result = result.scalar_one_or_none()
             
-            # Return data with or without evaluation results
+            if not eval_result:
+                raise HTTPException(status_code=404, detail="Evaluation result not found")
+            
+            # Return complete details including models
             return {
                 "id": test_case_id,
+                "criterion": test_case.criterion.name,
                 "input": test_case.input,
                 "description": test_case.description,
-                "output": eval_result.output if eval_result else None,
-                "result": eval_result.result if eval_result else "pending",
-                "explanation": eval_result.explanation if eval_result else None
+                "output": eval_result.output,
+                "result": eval_result.result,
+                "explanation": eval_result.explanation,
+                "prompt_tokens": eval_result.prompt_tokens,
+                "response_tokens": eval_result.response_tokens,
+                "input_model": eval_result.evaluation.model_name,
+                "output_model": SCORING_MODEL
             }
             
         except HTTPException as e:
@@ -283,6 +292,7 @@ async def evaluate_output(input_text: str, output_text: str, criterion: str, des
             if _ == 2:
                 return {"result": "error", "explanation": str(e)}
             await asyncio.sleep(1)
+
 @app.post("/evaluate")
 async def evaluate(system_prompt: SystemPrompt):
     logger.info(f"Starting evaluation with prompt: {system_prompt.prompt}")
@@ -457,17 +467,13 @@ async def get_evaluations(page: int = 1, limit: int = 5):
             
             evaluation_data = []
             for eval in evaluations:
-                # Calculate token count for system prompt
                 token_count = count_tokens(eval.system_prompt, eval.model_name)
-                
-                # Process results with full test case details
                 test_case_results = {}
                 scores_by_criteria = {}
 
                 for result in eval.results:
                     criterion_name = result.test_case.criterion.name
                     
-                    # Initialize criteria scores if not exists
                     if criterion_name not in scores_by_criteria:
                         scores_by_criteria[criterion_name] = {
                             "pass_count": 0,
@@ -475,11 +481,10 @@ async def get_evaluations(page: int = 1, limit: int = 5):
                         }
                     scores_by_criteria[criterion_name]["total_count"] += 1
                     
-                    # Update pass count if test passed
                     if result.result == "pass":
                         scores_by_criteria[criterion_name]["pass_count"] += 1
                     
-                    # Store full test case results
+                    # Update test case results to include model information
                     test_case_results[result.test_case.id] = {
                         "id": result.test_case.id,
                         "criterion": criterion_name,
@@ -487,7 +492,11 @@ async def get_evaluations(page: int = 1, limit: int = 5):
                         "description": result.test_case.description,
                         "output": result.output,
                         "result": result.result,
-                        "explanation": result.explanation
+                        "explanation": result.explanation,
+                        "input_model": eval.model_name,  # Add input model
+                        "output_model": config["scoring_model"],  # Add output model
+                        "prompt_tokens": result.prompt_tokens,  # Keep existing token info
+                        "response_tokens": result.response_tokens
                     }
                 
                 total_score = sum(
@@ -516,6 +525,8 @@ async def get_evaluations(page: int = 1, limit: int = 5):
         except Exception as e:
             logger.error(f"Error fetching evaluations: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
+
+
 
 if __name__ == "__main__":
     import uvicorn
