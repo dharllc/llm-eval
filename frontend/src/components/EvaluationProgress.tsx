@@ -35,7 +35,11 @@ export const EvaluationProgress: React.FC<EvaluationProgressProps> = ({
   const [showEvalDetails, setShowEvalDetails] = useState(false);
   const [evalSettings, setEvalSettings] = useState<EvaluationSettings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [totalTokens, setTotalTokens] = useState<number>(0);
+  const [totalCost, setTotalCost] = useState<number>(0);
+  const [costBreakdown, setCostBreakdown] = useState<{
+    evaluationCost: number;
+    scoringCost: number;
+  }>({ evaluationCost: 0, scoringCost: 0 });
 
   useEffect(() => {
     const fetchEvalSettings = async () => {
@@ -54,10 +58,16 @@ export const EvaluationProgress: React.FC<EvaluationProgressProps> = ({
 
   useEffect(() => {
     if (detailedResults) {
-      const total = Object.values(detailedResults).reduce((sum, result) => {
-        return sum + (result.prompt_tokens || 0) + (result.response_tokens || 0);
-      }, 0);
-      setTotalTokens(total);
+      let evalCost = 0;
+      let scoreCost = 0;
+      
+      Object.values(detailedResults).forEach(result => {
+        evalCost += result.evaluation_cost || 0;
+        scoreCost += result.scoring_cost || 0;
+      });
+
+      setCostBreakdown({ evaluationCost: evalCost, scoringCost: scoreCost });
+      setTotalCost(evalCost + scoreCost);
     }
   }, [detailedResults]);
 
@@ -108,15 +118,23 @@ export const EvaluationProgress: React.FC<EvaluationProgressProps> = ({
         }}>
           <Typography variant="subtitle2" gutterBottom>Evaluation Settings</Typography>
           <Typography variant="body2" sx={{ mb: 1 }}>
-            <strong>Scoring Model:</strong> {scoringModel} {scoringModel === 'gpt-4o-mini' && '(default)'}
+            <strong>Scoring Model:</strong> {scoringModel} {scoringModel === 'gpt-4o-mini-2024-07-18' && '(default)'}
           </Typography>
           <Typography variant="body2" sx={{ mb: 1 }}>
             <strong>Temperature:</strong> {evalSettings.temperature}
           </Typography>
-          {totalTokens > 0 && (
-            <Typography variant="body2" sx={{ mb: 1 }}>
-              <strong>Total Tokens Used:</strong> {totalTokens}
-            </Typography>
+          {totalCost > 0 && (
+            <>
+              <Typography variant="body2" sx={{ mb: 1 }}>
+                <strong>Total Cost:</strong> ${totalCost.toFixed(6)}
+              </Typography>
+              <Typography variant="body2" sx={{ mb: 1 }}>
+                <strong>Evaluation Cost:</strong> ${costBreakdown.evaluationCost.toFixed(6)}
+              </Typography>
+              <Typography variant="body2" sx={{ mb: 1 }}>
+                <strong>Scoring Cost:</strong> ${costBreakdown.scoringCost.toFixed(6)}
+              </Typography>
+            </>
           )}
           <Box sx={{ mb: 2 }}>
             <Typography variant="body2" sx={{ mb: 0.5 }}>
@@ -184,6 +202,7 @@ export const EvaluationProgress: React.FC<EvaluationProgressProps> = ({
         criteriaResults={criteriaResults}
         countsPerCriterion={testCaseAnalysis.counts_per_criterion}
         evaluationStarted={evaluationStarted}
+        evaluationComplete={evaluationComplete}
         activeCriterion={activeCriterion}
         evaluationId={evaluationId}
         detailedResults={detailedResults}

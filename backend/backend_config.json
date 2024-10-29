@@ -1,6 +1,29 @@
 {
-  "evaluation_model": "gpt-4o-mini",
-  "scoring_model": "gpt-4o",
+  "models": {
+    "OpenAI": {
+      "o1-preview-2024-09-12": {"input": 15, "output": 60},
+      "o1-mini-2024-09-12": {"input": 3, "output": 12},
+      "gpt-4o-2024-05-13": {"input": 5, "output": 15},
+      "gpt-4o-2024-08-06": {"input": 5, "output": 15},
+      "chatgpt-4o-latest": {"input": 5, "output": 15},
+      "gpt-4o-mini-2024-07-18": {"input": 0.15, "output": 0.60}
+    },
+    "Anthropic": {
+      "claude-3-5-sonnet-20240620": {"input": 3, "output": 15},
+      "claude-3-haiku-20240307": {"input": 0.25, "output": 1.25},
+      "claude-3-opus-20240229": {"input": 15, "output": 75}
+    },
+    "Google": {
+      "gemini-1.5-pro": {"input": 3.50, "output": 10.50},
+      "gemini-1.5-pro-exp-0801": {"input": 3.50, "output": 10.50},
+      "gemini-1.5-pro-exp-0827": {"input": 3.50, "output": 10.50},
+      "gemini-1.5-flash": {"input": 0.075, "output": 0.30},
+      "gemini-1.5-flash-exp-0827": {"input": 0.075, "output": 0.30},
+      "gemini-1.5-flash-8b-exp-0827": {"input": 0.075, "output": 0.30}
+    }
+  },
+  "default_evaluation_model": "gpt-4o-mini-2024-07-18",
+  "default_scoring_model": "gpt-4o-mini-2024-07-18",
   "evaluation_settings": {
     "temperature": 0.0,
     "system_prompt": "You are an expert evaluator specializing in assessing how well language models process and refine transcribed speech. Your role is to ensure outputs maintain original meaning and tone while improving clarity. You must strictly evaluate against the specific criterion provided, ignoring other aspects of the response. Judge each output purely on whether it achieves the criterion's specific goal, not on overall quality or additional content.",

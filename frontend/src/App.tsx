@@ -60,6 +60,8 @@ function App() {
       setProcessedTestCases(Object.keys(evaluation.test_case_results).length);
       setEvaluationComplete(true);
       setCurrentEvaluationId(evaluation.id);
+      setModelName(evaluation.model_name);
+      setScoringModel(evaluation.scoring_model);
     }
   }, []);
 
@@ -135,7 +137,7 @@ function App() {
     return () => wsRef.current?.close();
   }, [setupWebSocket, fetchAllEvaluations]);
 
-  const handleSystemPromptSubmit = useCallback(async (prompt: string) => {
+  const handleSystemPromptSubmit = useCallback(async (prompt: string, evaluationModel: string, scoringModel: string) => {
     if (!backendPort) return setError('Backend port not configured');
     setEvaluationStarted(true);
     setEvaluationComplete(false);
@@ -147,13 +149,19 @@ function App() {
     setSelectedEvaluation(null);
     setDetailedResults({});
     processedIds.current.clear();
+    setModelName(evaluationModel);
+    setScoringModel(scoringModel);
 
     try {
       const response = await fetch(`http://localhost:${backendPort}/evaluate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ prompt })
+        body: JSON.stringify({ 
+          prompt,
+          evaluation_model: evaluationModel,
+          scoring_model: scoringModel
+        })
       });
       if (!response.ok) throw new Error(await response.text());
       await response.json();
@@ -175,8 +183,13 @@ function App() {
           <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
             <Typography variant="h6" gutterBottom>Language Model</Typography>
             <Typography variant="body1">
-              Current model: {modelName} {modelName === 'gpt-4o-mini' && '(default)'}
+              Current model: {modelName} {modelName === 'gpt-4o-mini-2024-07-18' && '(default)'}
             </Typography>
+            {scoringModel && (
+              <Typography variant="body1">
+                Scoring model: {scoringModel} {scoringModel === 'gpt-4o-mini-2024-07-18' && '(default)'}
+              </Typography>
+            )}
           </Paper>
           <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
             <SystemPromptInput 

@@ -7,11 +7,9 @@ from sqlalchemy.orm import selectinload
 import os
 import json
 from datetime import datetime
-from openai import OpenAI
 import logging
 import asyncio
-from typing import List, Dict, Any, Set
-import weakref
+from typing import List, Dict, Any, Set, Optional
 import tiktoken
 
 from database import (
@@ -24,6 +22,13 @@ from database import (
     verify_database,
     snake_to_title_case,
     DatabaseConnectionError
+)
+
+from llm_interaction import (
+    get_completion_for_provider,
+    get_model_provider,
+    calculate_cost,
+    count_tokens
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -50,21 +55,27 @@ app.add_middleware(
 )
 
 load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 config_path = os.path.join(os.path.dirname(__file__), "backend_config.json")
 with open(config_path, "r") as config_file:
     config = json.load(config_file)
-EVALUATION_MODEL = config.get("evaluation_model", "gpt-4o-mini")
-SCORING_MODEL = config.get("scoring_model", "gpt-4o-mini")
+
+EVALUATION_MODEL = config.get("default_evaluation_model")
+SCORING_MODEL = config.get("default_scoring_model")
 
 class SystemPrompt(BaseModel):
     prompt: str
+    evaluation_model: Optional[str] = None
+    scoring_model: Optional[str] = None
 
 class TestCaseQuery(BaseModel):
     evaluation_id: int
     test_case_id: int
     criterion: str
+
+class ModelSelection(BaseModel):
+    evaluation_model: str
+    scoring_model: str
 
 class ConnectionManager:
     def __init__(self):
@@ -155,7 +166,6 @@ async def analyze_test_cases(session: Any) -> dict:
 async def get_test_case_details(evaluation_id: int, test_case_id: int):
     async with get_async_session() as session:
         try:
-            # First get the test case information
             test_case = await session.execute(
                 select(TestCase)
                 .options(selectinload(TestCase.criterion))
@@ -166,7 +176,6 @@ async def get_test_case_details(evaluation_id: int, test_case_id: int):
             if not test_case:
                 raise HTTPException(status_code=404, detail="Test case not found")
             
-            # Get the evaluation and result with a single query
             stmt = (
                 select(EvaluationResult)
                 .options(selectinload(EvaluationResult.evaluation))
@@ -181,7 +190,6 @@ async def get_test_case_details(evaluation_id: int, test_case_id: int):
             if not eval_result:
                 raise HTTPException(status_code=404, detail="Evaluation result not found")
             
-            # Return complete details including models
             return {
                 "id": test_case_id,
                 "criterion": test_case.criterion.name,
@@ -193,7 +201,7 @@ async def get_test_case_details(evaluation_id: int, test_case_id: int):
                 "prompt_tokens": eval_result.prompt_tokens,
                 "response_tokens": eval_result.response_tokens,
                 "input_model": eval_result.evaluation.model_name,
-                "output_model": SCORING_MODEL
+                "output_model": eval_result.evaluation.scoring_model
             }
             
         except HTTPException as e:
@@ -223,9 +231,27 @@ async def websocket_endpoint(websocket: WebSocket):
 async def get_config():
     return {
         "backendPort": repo_config["backend"]["port"],
-        "model": config["evaluation_model"],
-        "scoringModel": config["scoring_model"]
+        "models": config["models"],
+        "defaultEvaluationModel": config["default_evaluation_model"],
+        "defaultScoringModel": config["default_scoring_model"],
+        "currentEvaluationModel": EVALUATION_MODEL,
+        "currentScoringModel": SCORING_MODEL
     }
+
+@app.post("/models/select")
+async def select_models(selection: ModelSelection):
+    global EVALUATION_MODEL, SCORING_MODEL
+    
+    if selection.evaluation_model not in [model for provider in config["models"].values() for model in provider]:
+        raise HTTPException(status_code=400, detail=f"Invalid evaluation model: {selection.evaluation_model}")
+    
+    if selection.scoring_model not in [model for provider in config["models"].values() for model in provider]:
+        raise HTTPException(status_code=400, detail=f"Invalid scoring model: {selection.scoring_model}")
+    
+    EVALUATION_MODEL = selection.evaluation_model
+    SCORING_MODEL = selection.scoring_model
+    
+    return {"message": "Model selection updated successfully"}
 
 @app.get("/evaluation-settings")
 async def get_evaluation_settings():
@@ -239,8 +265,8 @@ async def get_test_case_analysis():
         except Exception as e:
             logger.error(f"Error in test case analysis: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
-
-async def evaluate_output(input_text: str, output_text: str, criterion: str, description: str):
+        
+async def evaluate_output(input_text: str, output_text: str, criterion: str, description: str, model: str = None):
     for _ in range(3):
         try:
             settings = config["evaluation_settings"]
@@ -251,40 +277,31 @@ async def evaluate_output(input_text: str, output_text: str, criterion: str, des
                 description=description
             )
 
-            response = await asyncio.to_thread(
-                client.chat.completions.create,
-                model=SCORING_MODEL,
-                messages=[
-                    {"role": "system", "content": settings["system_prompt"]},
-                    {"role": "user", "content": evaluation_prompt}
-                ],
-                functions=[{
-                    "name": "submit_evaluation",
-                    "description": "Submit evaluation result",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "passed": {
-                                "type": "boolean",
-                                "description": "Whether the output meets the criterion requirements"
-                            },
-                            "explanation": {
-                                "type": "string",
-                                "description": "Brief explanation of why the output passed or failed"
-                            }
-                        },
-                        "required": ["passed", "explanation"]
-                    }
-                }],
-                function_call={"name": "submit_evaluation"},
-                max_tokens=1000,
+            scoring_model = model or SCORING_MODEL
+            provider = await get_model_provider(scoring_model, config)
+            
+            messages = [
+                {"role": "system", "content": settings["system_prompt"]},
+                {"role": "user", "content": evaluation_prompt}
+            ]
+
+            response_text = await get_completion_for_provider(
+                provider=provider,
+                model=scoring_model,
+                messages=messages,
                 temperature=settings["temperature"]
             )
-            
-            result = json.loads(response.choices[0].message.function_call.arguments)
+
+            # Extract pass/fail and explanation from the response
+            lines = response_text.strip().split('\n')
+            passed = any('pass' in line.lower() for line in lines)
+            explanation = '\n'.join(line for line in lines if 'pass' not in line.lower() and 'fail' not in line.lower())
+
             return {
-                "result": "pass" if result["passed"] else "fail",
-                "explanation": result["explanation"]
+                "result": "pass" if passed else "fail",
+                "explanation": explanation.strip(),
+                "prompt_tokens": count_tokens(evaluation_prompt, scoring_model),
+                "response_tokens": count_tokens(response_text, scoring_model)
             }
                 
         except Exception as e:
@@ -296,6 +313,16 @@ async def evaluate_output(input_text: str, output_text: str, criterion: str, des
 @app.post("/evaluate")
 async def evaluate(system_prompt: SystemPrompt):
     logger.info(f"Starting evaluation with prompt: {system_prompt.prompt}")
+    
+    eval_model = system_prompt.evaluation_model or EVALUATION_MODEL
+    scoring_model = system_prompt.scoring_model or SCORING_MODEL
+
+    # Validate models
+    try:
+        eval_provider = await get_model_provider(eval_model, config)
+        scoring_provider = await get_model_provider(scoring_model, config)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     
     async with get_async_session() as session:
         try:
@@ -314,14 +341,17 @@ async def evaluate(system_prompt: SystemPrompt):
             
             analysis = await analyze_test_cases(session)
             
-            # Count initial system prompt tokens
-            system_prompt_tokens = count_tokens(system_prompt.prompt, EVALUATION_MODEL)
+            # Count initial system prompt tokens and calculate cost
+            system_prompt_tokens = count_tokens(system_prompt.prompt, eval_model)
+            input_cost = await calculate_cost(system_prompt_tokens, eval_model, "input", config)
             
             evaluation = Evaluation(
                 evaluation_type_id=eval_type.id,
                 system_prompt=system_prompt.prompt,
-                model_name=EVALUATION_MODEL,
-                total_tokens=system_prompt_tokens  # Initialize with system prompt tokens
+                model_name=eval_model,
+                scoring_model=scoring_model,
+                total_tokens=system_prompt_tokens,
+                total_cost=input_cost
             )
             session.add(evaluation)
             await session.flush()
@@ -331,40 +361,59 @@ async def evaluate(system_prompt: SystemPrompt):
                              for criterion, count in analysis["counts_per_criterion"].items()}
             
             total_tokens = system_prompt_tokens
+            total_cost = input_cost
             
             for index, case in enumerate(test_cases, start=1):
                 try:
                     criterion = case.criterion.name
-                    system_message = system_prompt.prompt
-                    user_message = case.input
-                    
                     messages = [
-                        {"role": "system", "content": system_message},
-                        {"role": "user", "content": user_message}
+                        {"role": "system", "content": system_prompt.prompt},
+                        {"role": "user", "content": case.input}
                     ]
 
-                    response = await asyncio.to_thread(
-                        client.chat.completions.create,
-                        model=EVALUATION_MODEL,
+                    # Get completion from selected provider
+                    assistant_response = await get_completion_for_provider(
+                        provider=eval_provider,
+                        model=eval_model,
                         messages=messages,
-                        max_tokens=1500,
                         temperature=config["evaluation_settings"]["temperature"]
                     )
 
-                    assistant_response = response.choices[0].message.content.strip()
                     evaluation_result = await evaluate_output(
                         case.input, 
                         assistant_response,
                         criterion,
-                        case.description
+                        case.description,
+                        scoring_model
                     )
 
-                    # Count tokens for this interaction
-                    prompt_tokens = count_tokens(user_message, EVALUATION_MODEL)  # Just user message as system prompt counted once
-                    response_tokens = count_tokens(assistant_response, EVALUATION_MODEL)
+                    # Calculate tokens and costs
+                    prompt_tokens = count_tokens(case.input, eval_model)
+                    response_tokens = count_tokens(assistant_response, eval_model)
                     
-                    # Update total tokens
+                    input_cost = await calculate_cost(prompt_tokens, eval_model, "input", config)
+                    output_cost = await calculate_cost(response_tokens, eval_model, "output", config)
+                    
+                    eval_cost = input_cost + output_cost
+                    
+                    # Calculate scoring costs
+                    scoring_input_cost = await calculate_cost(
+                        evaluation_result["prompt_tokens"], 
+                        scoring_model, 
+                        "input", 
+                        config
+                    )
+                    scoring_output_cost = await calculate_cost(
+                        evaluation_result["response_tokens"], 
+                        scoring_model, 
+                        "output", 
+                        config
+                    )
+                    
+                    scoring_cost = scoring_input_cost + scoring_output_cost
+                    
                     total_tokens += prompt_tokens + response_tokens
+                    total_cost += eval_cost + scoring_cost
 
                     result = EvaluationResult(
                         evaluation_id=evaluation.id,
@@ -373,13 +422,16 @@ async def evaluate(system_prompt: SystemPrompt):
                         result=evaluation_result["result"],
                         explanation=evaluation_result["explanation"],
                         prompt_tokens=prompt_tokens,
-                        response_tokens=response_tokens
+                        response_tokens=response_tokens,
+                        evaluation_cost=eval_cost,
+                        scoring_cost=scoring_cost
                     )
                     session.add(result)
                     await session.flush()
 
-                    # Update evaluation total tokens
+                    # Update evaluation totals
                     evaluation.total_tokens = total_tokens
+                    evaluation.total_cost = total_cost
                     await session.flush()
 
                     criteria_counts[criterion]['processed'] += 1
@@ -391,7 +443,8 @@ async def evaluate(system_prompt: SystemPrompt):
                             "id": case.id,
                             "criterion": criterion,
                             "result": evaluation_result["result"],
-                            "evaluation_id": evaluation.id
+                            "evaluation_id": evaluation.id,
+                            "cost": eval_cost + scoring_cost
                         }
                     }
                     await manager.broadcast(progress)
@@ -413,7 +466,8 @@ async def evaluate(system_prompt: SystemPrompt):
             final_progress = {
                 "total_progress": f"{total_cases}/{total_cases}",
                 "criteria_progress": criteria_counts,
-                "stage": "completed"
+                "stage": "completed",
+                "total_cost": total_cost
             }
             await manager.broadcast(final_progress)
             
@@ -423,22 +477,7 @@ async def evaluate(system_prompt: SystemPrompt):
             logger.error(f"Evaluation error: {str(e)}", exc_info=True)
             await manager.broadcast({"status": "error", "message": str(e)})
             raise HTTPException(status_code=500, detail=str(e))
-
-def get_port():
-    return repo_config["backend"]["port"]
-
-@app.on_event("startup")
-async def startup_event():
-    await verify_database()
-
-def count_tokens(text: str, model: str = "gpt-4o") -> int:
-    try:
-        encoding = tiktoken.encoding_for_model(model)
-        return len(encoding.encode(text))
-    except KeyError:
-        encoding = tiktoken.get_encoding("cl100k_base")
-        return len(encoding.encode(text))
-
+        
 @app.get("/evaluations")
 async def get_evaluations(page: int = 1, limit: int = 5):
     async with get_async_session() as session:
@@ -467,7 +506,6 @@ async def get_evaluations(page: int = 1, limit: int = 5):
             
             evaluation_data = []
             for eval in evaluations:
-                token_count = count_tokens(eval.system_prompt, eval.model_name)
                 test_case_results = {}
                 scores_by_criteria = {}
 
@@ -477,14 +515,15 @@ async def get_evaluations(page: int = 1, limit: int = 5):
                     if criterion_name not in scores_by_criteria:
                         scores_by_criteria[criterion_name] = {
                             "pass_count": 0,
-                            "total_count": 0
+                            "total_count": 0,
+                            "cost": 0
                         }
                     scores_by_criteria[criterion_name]["total_count"] += 1
+                    scores_by_criteria[criterion_name]["cost"] += (result.evaluation_cost + result.scoring_cost)
                     
                     if result.result == "pass":
                         scores_by_criteria[criterion_name]["pass_count"] += 1
                     
-                    # Update test case results to include model information
                     test_case_results[result.test_case.id] = {
                         "id": result.test_case.id,
                         "criterion": criterion_name,
@@ -493,14 +532,21 @@ async def get_evaluations(page: int = 1, limit: int = 5):
                         "output": result.output,
                         "result": result.result,
                         "explanation": result.explanation,
-                        "input_model": eval.model_name,  # Add input model
-                        "output_model": config["scoring_model"],  # Add output model
-                        "prompt_tokens": result.prompt_tokens,  # Keep existing token info
-                        "response_tokens": result.response_tokens
+                        "input_model": eval.model_name,
+                        "output_model": eval.scoring_model,
+                        "prompt_tokens": result.prompt_tokens,
+                        "response_tokens": result.response_tokens,
+                        "evaluation_cost": result.evaluation_cost,
+                        "scoring_cost": result.scoring_cost
                     }
                 
                 total_score = sum(
                     criteria["pass_count"] 
+                    for criteria in scores_by_criteria.values()
+                )
+                
+                total_cost = sum(
+                    criteria["cost"]
                     for criteria in scores_by_criteria.values()
                 )
                 
@@ -509,8 +555,10 @@ async def get_evaluations(page: int = 1, limit: int = 5):
                     "timestamp": eval.timestamp.isoformat(),
                     "system_prompt": eval.system_prompt,
                     "model_name": eval.model_name,
+                    "scoring_model": eval.scoring_model,
                     "total_score": total_score,
-                    "token_count": token_count,
+                    "total_tokens": eval.total_tokens,
+                    "total_cost": total_cost,
                     "scores_by_criteria": scores_by_criteria,
                     "test_case_results": test_case_results
                 })
@@ -526,7 +574,38 @@ async def get_evaluations(page: int = 1, limit: int = 5):
             logger.error(f"Error fetching evaluations: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/models")
+async def get_available_models():
+    return {
+        "models": config["models"],
+        "current": {
+            "evaluation_model": EVALUATION_MODEL,
+            "scoring_model": SCORING_MODEL
+        },
+        "default": {
+            "evaluation_model": config["default_evaluation_model"],
+            "scoring_model": config["default_scoring_model"]
+        }
+    }
 
+@app.get("/models/cost/{model_name}")
+async def get_model_cost(model_name: str):
+    try:
+        provider = await get_model_provider(model_name, config)
+        return {
+            "model": model_name,
+            "provider": provider,
+            "costs": config["models"][provider][model_name]
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.on_event("startup")
+async def startup_event():
+    await verify_database()
+
+def get_port():
+    return repo_config["backend"]["port"]
 
 if __name__ == "__main__":
     import uvicorn
